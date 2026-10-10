@@ -1,21 +1,22 @@
 use crate::http::Response;
+use crate::middleware::rbac::AuthContext;
 use crate::services::crud::{parse_payload, validation_error};
 use crate::state::AppState;
 use crate::validators::records::validate_tenant;
 use serde_json::json;
 
-pub fn show(state: &AppState) -> Response {
+pub fn show(auth: &AuthContext, state: &AppState) -> Response {
     Response::json(
         200,
         json!({
             "status": "ok",
-            "data": state.current_tenant()
+            "data": state.current_tenant(&auth.tenant_id)
         })
         .to_string(),
     )
 }
 
-pub fn update(body: &str, state: &AppState) -> Response {
+pub fn update(body: &str, auth: &AuthContext, state: &AppState) -> Response {
     let payload = match parse_payload(body) {
         Ok(payload) => payload,
         Err(error) => return validation_error(&error),
@@ -24,7 +25,7 @@ pub fn update(body: &str, state: &AppState) -> Response {
         return validation_error(&error);
     }
 
-    let tenant = state.replace_tenant(payload);
+    let tenant = state.replace_tenant(&auth.tenant_id, payload);
     Response::json(
         200,
         json!({

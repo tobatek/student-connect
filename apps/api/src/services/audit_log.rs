@@ -12,6 +12,8 @@ pub enum AuditAction {
     DeleteDocument,
     SubmitSimkatmawa,
     UpdateEnumMapping,
+    CreateRecord,
+    UpdateRecord,
 }
 
 impl AuditAction {
@@ -25,6 +27,8 @@ impl AuditAction {
             Self::DeleteDocument => "DELETE_DOCUMENT",
             Self::SubmitSimkatmawa => "SUBMIT_SIMKATMAWA",
             Self::UpdateEnumMapping => "UPDATE_ENUM_MAPPING",
+            Self::CreateRecord => "CREATE_RECORD",
+            Self::UpdateRecord => "UPDATE_RECORD",
         }
     }
 }
@@ -48,6 +52,27 @@ impl AuditLogService {
             escape_json(&auth.tenant_id),
             auth.role.as_str(),
             escape_json(&payload)
+        );
+    }
+}
+
+impl AuditLogService {
+    /// Logs which entity was touched without copying the request body into the log.
+    pub fn record_entity(
+        &self,
+        action: AuditAction,
+        auth: &AuthContext,
+        entity: &str,
+        entity_id: &str,
+    ) {
+        println!(
+            r#"audit action="{}" user_id="{}" tenant_id="{}" role="{}" entity="{}" entity_id="{}""#,
+            action.as_str(),
+            escape_json(&auth.user_id),
+            escape_json(&auth.tenant_id),
+            auth.role.as_str(),
+            escape_json(entity),
+            escape_json(entity_id)
         );
     }
 }

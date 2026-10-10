@@ -1,7 +1,7 @@
 use crate::config::AppConfig;
 use crate::controllers::{documents, health, session, tenant};
 use crate::http::{Request, Response};
-use crate::middleware::rbac::{authorize, Role};
+use crate::middleware::rbac::{authorize, AuthContext, AuthError, Role};
 use crate::models::record::RecordKind;
 use crate::services::audit_log::{AuditAction, AuditLogService};
 use crate::services::crud;
@@ -13,234 +13,112 @@ const ADMIN_ROLES: &[Role] = &[
     Role::AdminKemahasiswaan,
     Role::AdminProdi,
 ];
+const SETTINGS_ROLES: &[Role] = &[Role::SuperAdmin, Role::AdminPt];
+
+const RECORD_ROUTES: &[(&str, RecordKind)] = &[
+    ("/api/prestasi-mandiri", RecordKind::PrestasiMandiri),
+    ("/api/sertifikasi", RecordKind::Sertifikasi),
+    ("/api/rekognisi", RecordKind::Rekognisi),
+    ("/api/kejuaraan", RecordKind::Kejuaraan),
+    ("/api/institusi", RecordKind::Institusi),
+];
 
 pub fn route(request: &Request, config: &AppConfig, state: &AppState) -> Result<Response, String> {
-    match (request.method.as_str(), request.path.as_str()) {
-        ("GET", "/api/health") => Ok(Response::json(200, health::show(config))),
-        ("GET", "/api/tenant") => {
-            let auth = match authorize(request, &[Role::SuperAdmin, Role::AdminPt]) {
-                Ok(auth) => auth,
-                Err(error) => return Ok(auth_error_response(&error)),
-            };
+    let method = request.method.as_str();
+    let path = request.path.as_str();
+
+    let response = match (method, path) {
+        ("GET", "/api/health") => Response::json(200, health::show(config)),
+        ("GET", "/api/session") => guarded(request, Role::all(), |auth| {
+            Response::json(200, session::current(&auth))
+        }),
+        ("GET", "/api/tenant") => guarded(request, SETTINGS_ROLES, |auth| {
             AuditLogService::stdout().record(AuditAction::ReadTenant, &auth, None);
-            Ok(tenant::show(state))
-        }
-        ("GET", "/api/session") => {
-            let auth = match authorize(request, Role::all()) {
-                Ok(auth) => auth,
-                Err(error) => return Ok(auth_error_response(&error)),
-            };
-            Ok(Response::json(200, session::current(&auth)))
-        }
-        ("PUT", "/api/tenant") => {
-            let auth = match authorize(request, &[Role::SuperAdmin, Role::AdminPt]) {
-                Ok(auth) => auth,
-                Err(error) => return Ok(auth_error_response(&error)),
-            };
+            tenant::show(&auth, state)
+        }),
+        ("PUT", "/api/tenant") => guarded(request, SETTINGS_ROLES, |auth| {
             AuditLogService::stdout().record(
                 AuditAction::UpdateTenant,
                 &auth,
                 Some(request.body.as_str()),
             );
-            Ok(tenant::update(&request.body, state))
-        }
-        ("GET", "/api/prestasi-mandiri") => {
-            list_records(request, state, RecordKind::PrestasiMandiri)
-        }
-        ("POST", "/api/prestasi-mandiri") => {
-            create_record(request, state, RecordKind::PrestasiMandiri)
-        }
-        ("GET", path) if path.starts_with("/api/prestasi-mandiri/") => get_record(
-            request,
-            path,
-            "/api/prestasi-mandiri/",
-            state,
-            RecordKind::PrestasiMandiri,
-        ),
-        ("PUT", path) if path.starts_with("/api/prestasi-mandiri/") => update_record(
-            request,
-            path,
-            "/api/prestasi-mandiri/",
-            state,
-            RecordKind::PrestasiMandiri,
-        ),
-        ("GET", "/api/sertifikasi") => list_records(request, state, RecordKind::Sertifikasi),
-        ("POST", "/api/sertifikasi") => create_record(request, state, RecordKind::Sertifikasi),
-        ("GET", path) if path.starts_with("/api/sertifikasi/") => get_record(
-            request,
-            path,
-            "/api/sertifikasi/",
-            state,
-            RecordKind::Sertifikasi,
-        ),
-        ("PUT", path) if path.starts_with("/api/sertifikasi/") => update_record(
-            request,
-            path,
-            "/api/sertifikasi/",
-            state,
-            RecordKind::Sertifikasi,
-        ),
-        ("GET", "/api/rekognisi") => list_records(request, state, RecordKind::Rekognisi),
-        ("POST", "/api/rekognisi") => create_record(request, state, RecordKind::Rekognisi),
-        ("GET", path) if path.starts_with("/api/rekognisi/") => get_record(
-            request,
-            path,
-            "/api/rekognisi/",
-            state,
-            RecordKind::Rekognisi,
-        ),
-        ("PUT", path) if path.starts_with("/api/rekognisi/") => update_record(
-            request,
-            path,
-            "/api/rekognisi/",
-            state,
-            RecordKind::Rekognisi,
-        ),
-        ("GET", "/api/kejuaraan") => list_records(request, state, RecordKind::Kejuaraan),
-        ("POST", "/api/kejuaraan") => create_record(request, state, RecordKind::Kejuaraan),
-        ("GET", path) if path.starts_with("/api/kejuaraan/") => get_record(
-            request,
-            path,
-            "/api/kejuaraan/",
-            state,
-            RecordKind::Kejuaraan,
-        ),
-        ("PUT", path) if path.starts_with("/api/kejuaraan/") => update_record(
-            request,
-            path,
-            "/api/kejuaraan/",
-            state,
-            RecordKind::Kejuaraan,
-        ),
-        ("GET", "/api/institusi") => list_records(request, state, RecordKind::Institusi),
-        ("POST", "/api/institusi") => create_record(request, state, RecordKind::Institusi),
-        ("GET", path) if path.starts_with("/api/institusi/") => get_record(
-            request,
-            path,
-            "/api/institusi/",
-            state,
-            RecordKind::Institusi,
-        ),
-        ("PUT", path) if path.starts_with("/api/institusi/") => update_record(
-            request,
-            path,
-            "/api/institusi/",
-            state,
-            RecordKind::Institusi,
-        ),
-        ("GET", "/api/settings/enum-mappings") => {
-            list_records(request, state, RecordKind::EnumMapping)
-        }
-        ("PUT", "/api/settings/enum-mappings") => {
-            create_record(request, state, RecordKind::EnumMapping)
-        }
-        ("GET", "/api/documents") => list_documents(request, state),
-        ("POST", "/api/documents/upload") => upload_document(request, config, state),
-        ("GET", path) if path.starts_with("/api/documents/") => show_document(request, path, state),
-        ("DELETE", path) if path.starts_with("/api/documents/") => {
-            delete_document(request, path, state)
-        }
-        _ => Ok(not_found()),
-    }
-}
-
-fn list_records(request: &Request, state: &AppState, kind: RecordKind) -> Result<Response, String> {
-    match authorize(request, Role::all()) {
-        Ok(_) => Ok(crud::list(kind, request, state)),
-        Err(error) => Ok(auth_error_response(&error)),
-    }
-}
-
-fn create_record(
-    request: &Request,
-    state: &AppState,
-    kind: RecordKind,
-) -> Result<Response, String> {
-    let auth = match authorize(request, ADMIN_ROLES) {
-        Ok(auth) => auth,
-        Err(error) => return Ok(auth_error_response(&error)),
+            tenant::update(&request.body, &auth, state)
+        }),
+        ("GET", "/api/settings/enum-mappings") => guarded(request, Role::all(), |auth| {
+            crud::list(RecordKind::EnumMapping, request, &auth, state)
+        }),
+        ("PUT", "/api/settings/enum-mappings") => guarded(request, SETTINGS_ROLES, |auth| {
+            crud::upsert_enum_mapping(request, &auth, state)
+        }),
+        ("GET", "/api/documents") => guarded(request, Role::all(), |auth| {
+            documents::list(request, &auth, state)
+        }),
+        ("POST", "/api/documents/upload") => guarded(request, ADMIN_ROLES, |auth| {
+            AuditLogService::stdout().record(
+                AuditAction::UploadDocument,
+                &auth,
+                Some(request.body.as_str()),
+            );
+            documents::upload(request, &auth, config, state)
+        }),
+        ("GET", _) if document_id(path).is_some() => guarded(request, Role::all(), |auth| {
+            documents::show(document_id(path).unwrap_or_default(), &auth, state)
+        }),
+        ("DELETE", _) if document_id(path).is_some() => guarded(request, ADMIN_ROLES, |auth| {
+            AuditLogService::stdout().record(AuditAction::DeleteDocument, &auth, None);
+            documents::delete(document_id(path).unwrap_or_default(), &auth, state)
+        }),
+        _ => match resolve_record_route(path) {
+            Some((kind, None)) => match method {
+                "GET" => guarded(request, Role::all(), |auth| {
+                    crud::list(kind, request, &auth, state)
+                }),
+                "POST" => guarded(request, ADMIN_ROLES, |auth| {
+                    crud::create(kind, request, &auth, state)
+                }),
+                _ => not_found(),
+            },
+            Some((kind, Some(id))) => match method {
+                "GET" => guarded(request, Role::all(), |auth| {
+                    crud::get(kind, id, &auth, state)
+                }),
+                "PUT" => guarded(request, ADMIN_ROLES, |auth| {
+                    crud::update(kind, id, request, &auth, state)
+                }),
+                _ => not_found(),
+            },
+            None => not_found(),
+        },
     };
-    Ok(crud::create(kind, request, &auth, state))
+
+    Ok(response)
 }
 
-fn get_record(
+/// Authenticates the request, then runs `handler` only if the role is allowed.
+fn guarded(
     request: &Request,
-    path: &str,
-    prefix: &str,
-    state: &AppState,
-    kind: RecordKind,
-) -> Result<Response, String> {
-    if let Err(error) = authorize(request, Role::all()) {
-        return Ok(auth_error_response(&error));
-    }
-    let id = path.trim_start_matches(prefix);
-    if id.is_empty() {
-        return Ok(not_found());
-    }
-    Ok(crud::get(kind, id, state))
-}
-
-fn update_record(
-    request: &Request,
-    path: &str,
-    prefix: &str,
-    state: &AppState,
-    kind: RecordKind,
-) -> Result<Response, String> {
-    let auth = match authorize(request, ADMIN_ROLES) {
-        Ok(auth) => auth,
-        Err(error) => return Ok(auth_error_response(&error)),
-    };
-    let id = path.trim_start_matches(prefix);
-    if id.is_empty() {
-        return Ok(not_found());
-    }
-    AuditLogService::stdout().record(AuditAction::UpdateEnumMapping, &auth, Some(&request.body));
-    Ok(crud::update(kind, id, request, state))
-}
-
-fn list_documents(request: &Request, state: &AppState) -> Result<Response, String> {
-    match authorize(request, Role::all()) {
-        Ok(_) => Ok(documents::list(request, state)),
-        Err(error) => Ok(auth_error_response(&error)),
+    allowed_roles: &[Role],
+    handler: impl FnOnce(AuthContext) -> Response,
+) -> Response {
+    match authorize(request, allowed_roles) {
+        Ok(auth) => handler(auth),
+        Err(error) => auth_error_response(&error),
     }
 }
 
-fn upload_document(
-    request: &Request,
-    config: &AppConfig,
-    state: &AppState,
-) -> Result<Response, String> {
-    let auth = match authorize(request, ADMIN_ROLES) {
-        Ok(auth) => auth,
-        Err(error) => return Ok(auth_error_response(&error)),
-    };
-    AuditLogService::stdout().record(AuditAction::UploadDocument, &auth, Some(&request.body));
-    Ok(documents::upload(request, &auth, config, state))
+fn resolve_record_route(path: &str) -> Option<(RecordKind, Option<&str>)> {
+    RECORD_ROUTES.iter().find_map(|(base, kind)| {
+        if path == *base {
+            return Some((*kind, None));
+        }
+        let id = path.strip_prefix(base)?.strip_prefix('/')?;
+        (!id.is_empty() && !id.contains('/')).then_some((*kind, Some(id)))
+    })
 }
 
-fn show_document(request: &Request, path: &str, state: &AppState) -> Result<Response, String> {
-    if let Err(error) = authorize(request, Role::all()) {
-        return Ok(auth_error_response(&error));
-    }
-    let id = path.trim_start_matches("/api/documents/");
-    if id.is_empty() {
-        return Ok(not_found());
-    }
-    Ok(documents::show(id, state))
-}
-
-fn delete_document(request: &Request, path: &str, state: &AppState) -> Result<Response, String> {
-    let auth = match authorize(request, ADMIN_ROLES) {
-        Ok(auth) => auth,
-        Err(error) => return Ok(auth_error_response(&error)),
-    };
-    let id = path.trim_start_matches("/api/documents/");
-    if id.is_empty() {
-        return Ok(not_found());
-    }
-    AuditLogService::stdout().record(AuditAction::DeleteDocument, &auth, None);
-    Ok(documents::delete(id, state))
+fn document_id(path: &str) -> Option<&str> {
+    let id = path.strip_prefix("/api/documents/")?;
+    (!id.is_empty() && !id.contains('/') && id != "upload").then_some(id)
 }
 
 fn not_found() -> Response {
@@ -250,17 +128,12 @@ fn not_found() -> Response {
     )
 }
 
-fn auth_error_response(error: &str) -> Response {
-    let status = if error.contains("not allowed") {
-        403
-    } else {
-        401
-    };
+fn auth_error_response(error: &AuthError) -> Response {
     Response::json(
-        status,
+        error.status_code(),
         format!(
             r#"{{"status":"error","message":"{}"}}"#,
-            crate::http::escape_json(error)
+            crate::http::escape_json(&error.message())
         ),
     )
 }
@@ -269,35 +142,58 @@ fn auth_error_response(error: &str) -> Response {
 mod tests {
     use super::*;
 
+    const PRESTASI: &str = r#"{"lomba":"Hackathon","level":"NAS","kategori":"RISNOV","peringkat":"JUARA1","mahasiswa":[{"nim":"1","nama":"A"}]}"#;
+
+    fn call(
+        method: &str,
+        path: &str,
+        tenant: &str,
+        role: &str,
+        body: &str,
+        state: &AppState,
+    ) -> Response {
+        let request = Request::parse(&format!(
+            "{method} {path} HTTP/1.1\r\nx-user-id: u-1\r\nx-tenant-id: {tenant}\r\nx-user-role: {role}\r\n\r\n{body}",
+        ));
+        route(&request, &AppConfig::from_env(), state).expect("route should respond")
+    }
+
+    fn created_id(response: &Response) -> String {
+        let body: serde_json::Value = serde_json::from_str(&response.body).expect("json body");
+        body["data"]["id"].as_str().expect("id").to_string()
+    }
+
     #[test]
     fn health_is_public() {
-        let config = AppConfig::from_env();
-        let state = AppState::default();
         let request = Request::parse("GET /api/health HTTP/1.1\r\n\r\n");
-        let response = route(&request, &config, &state).expect("health should route");
+        let response = route(&request, &AppConfig::from_env(), &AppState::default())
+            .expect("health should route");
 
         assert_eq!(response.status_code, 200);
     }
 
     #[test]
-    fn tenant_requires_allowed_role() {
-        let config = AppConfig::from_env();
+    fn tenant_requires_authentication_and_allowed_role() {
         let state = AppState::default();
         let request = Request::parse("GET /api/tenant HTTP/1.1\r\n\r\n");
-        let response = route(&request, &config, &state).expect("tenant route should respond");
-
+        let response = route(&request, &AppConfig::from_env(), &state).expect("respond");
         assert_eq!(response.status_code, 401);
         assert!(response.body.contains("missing auth"));
+
+        let response = call("GET", "/api/tenant", "t-1", "MAHASISWA", "", &state);
+        assert_eq!(response.status_code, 403);
     }
 
     #[test]
     fn session_accepts_known_role() {
-        let config = AppConfig::from_env();
-        let state = AppState::default();
-        let request = Request::parse(
-            "GET /api/session HTTP/1.1\r\nx-user-id: u-1\r\nx-tenant-id: t-1\r\nx-user-role: AUDITOR\r\n\r\n",
+        let response = call(
+            "GET",
+            "/api/session",
+            "t-1",
+            "AUDITOR",
+            "",
+            &AppState::default(),
         );
-        let response = route(&request, &config, &state).expect("session route should respond");
 
         assert_eq!(response.status_code, 200);
         assert!(response.body.contains("AUDITOR"));
@@ -305,45 +201,206 @@ mod tests {
 
     #[test]
     fn prestasi_mandiri_validates_required_fields() {
-        let config = AppConfig::from_env();
-        let state = AppState::default();
-        let request = Request::parse(
-            "POST /api/prestasi-mandiri HTTP/1.1\r\nx-user-id: u-1\r\nx-tenant-id: t-1\r\nx-user-role: ADMIN_PT\r\n\r\n{}",
+        let response = call(
+            "POST",
+            "/api/prestasi-mandiri",
+            "t-1",
+            "ADMIN_PT",
+            "{}",
+            &AppState::default(),
         );
-        let response = route(&request, &config, &state).expect("crud route should respond");
 
         assert_eq!(response.status_code, 400);
-        assert!(response.body.contains("lomba is required"));
+        assert!(response.body.contains("level is required"));
     }
 
     #[test]
     fn prestasi_mandiri_create_and_list_are_paginated() {
-        let config = AppConfig::from_env();
         let state = AppState::default();
-        let body = r#"{"lomba":"Hackathon","level":"NAS","kategori":"RISNOV","peringkat":"JUARA1","mahasiswa":[{"nim":"1","nama":"A"}]}"#;
-        let request = Request::parse(&format!(
-            "POST /api/prestasi-mandiri HTTP/1.1\r\nx-user-id: u-1\r\nx-tenant-id: t-1\r\nx-user-role: ADMIN_PT\r\n\r\n{body}",
-        ));
-        let response = route(&request, &config, &state).expect("create should respond");
-        assert_eq!(response.status_code, 201);
-
-        let list = Request::parse(
-            "GET /api/prestasi-mandiri?page=1&limit=10 HTTP/1.1\r\nx-user-id: u-1\r\nx-tenant-id: t-1\r\nx-user-role: AUDITOR\r\n\r\n",
+        let response = call(
+            "POST",
+            "/api/prestasi-mandiri",
+            "t-1",
+            "ADMIN_PT",
+            PRESTASI,
+            &state,
         );
-        let response = route(&list, &config, &state).expect("list should respond");
+        assert_eq!(response.status_code, 201);
+        assert!(response.body.contains(r#""status":"DRAFT""#));
+        assert!(response.body.contains(r#""created_by":"u-1""#));
 
+        let response = call(
+            "GET",
+            "/api/prestasi-mandiri?page=1&limit=10",
+            "t-1",
+            "AUDITOR",
+            "",
+            &state,
+        );
         assert_eq!(response.status_code, 200);
         assert!(response.body.contains(r#""total":1"#));
     }
 
     #[test]
-    fn document_upload_validates_mime_type() {
-        let config = AppConfig::from_env();
-        let state = AppState::default();
-        let request = Request::parse(
-            "POST /api/documents/upload HTTP/1.1\r\nx-user-id: u-1\r\nx-tenant-id: ameta\r\nx-user-role: ADMIN_PT\r\n\r\n{\"original_filename\":\"proof.exe\",\"mime_type\":\"application/octet-stream\",\"size_bytes\":10,\"checksum\":\"abc\",\"record_type\":\"prestasi-mandiri\",\"record_id\":\"pm-1\",\"document_type\":\"sertifikat\"}",
+    fn readers_cannot_write_records() {
+        let response = call(
+            "POST",
+            "/api/prestasi-mandiri",
+            "t-1",
+            "MAHASISWA",
+            PRESTASI,
+            &AppState::default(),
         );
-        let response = route(&request, &config, &state).expect("upload should respond");
+
+        assert_eq!(response.status_code, 403);
+    }
+
+    #[test]
+    fn records_are_isolated_between_tenants() {
+        let state = AppState::default();
+        let created = call(
+            "POST",
+            "/api/prestasi-mandiri",
+            "tenant-a",
+            "ADMIN_PT",
+            PRESTASI,
+            &state,
+        );
+        let id = created_id(&created);
+        let path = format!("/api/prestasi-mandiri/{id}");
+
+        assert_eq!(
+            call("GET", &path, "tenant-a", "ADMIN_PT", "", &state).status_code,
+            200
+        );
+        assert_eq!(
+            call("GET", &path, "tenant-b", "ADMIN_PT", "", &state).status_code,
+            404
+        );
+        assert_eq!(
+            call("PUT", &path, "tenant-b", "ADMIN_PT", PRESTASI, &state).status_code,
+            404
+        );
+
+        let list = call(
+            "GET",
+            "/api/prestasi-mandiri",
+            "tenant-b",
+            "ADMIN_PT",
+            "",
+            &state,
+        );
+        assert!(list.body.contains(r#""total":0"#));
+    }
+
+    #[test]
+    fn server_managed_fields_are_rejected() {
+        let state = AppState::default();
+        let body = PRESTASI.replace('{', r#"{"status":"SENT","tenant_id":"other","#);
+        let response = call(
+            "POST",
+            "/api/prestasi-mandiri",
+            "t-1",
+            "ADMIN_PT",
+            &body,
+            &state,
+        );
+
+        assert_eq!(response.status_code, 400);
+        assert!(response.body.contains("not allowed"));
+    }
+
+    #[test]
+    fn update_keeps_status_and_owner() {
+        let state = AppState::default();
+        let created = call(
+            "POST",
+            "/api/prestasi-mandiri",
+            "t-1",
+            "ADMIN_PT",
+            PRESTASI,
+            &state,
+        );
+        let path = format!("/api/prestasi-mandiri/{}", created_id(&created));
+        let changed = PRESTASI.replace("Hackathon", "Hackathon 2");
+        let response = call("PUT", &path, "t-1", "ADMIN_PRODI", &changed, &state);
+
+        assert_eq!(response.status_code, 200);
+        assert!(response.body.contains("Hackathon 2"));
+        assert!(response.body.contains(r#""status":"DRAFT""#));
+        assert!(response.body.contains(r#""created_by":"u-1""#));
+    }
+
+    #[test]
+    fn enum_mapping_put_is_an_upsert() {
+        let state = AppState::default();
+        let body = r#"{"category":"level","internal_code":"NAS","simkatmawa_code":"3"}"#;
+        let first = call(
+            "PUT",
+            "/api/settings/enum-mappings",
+            "t-1",
+            "ADMIN_PT",
+            body,
+            &state,
+        );
+        assert_eq!(first.status_code, 201);
+
+        let body = r#"{"category":"level","internal_code":"NAS","simkatmawa_code":"4"}"#;
+        let second = call(
+            "PUT",
+            "/api/settings/enum-mappings",
+            "t-1",
+            "ADMIN_PT",
+            body,
+            &state,
+        );
+        assert_eq!(second.status_code, 200);
+        assert_eq!(created_id(&first), created_id(&second));
+
+        let list = call(
+            "GET",
+            "/api/settings/enum-mappings",
+            "t-1",
+            "AUDITOR",
+            "",
+            &state,
+        );
+        assert!(list.body.contains(r#""total":1"#));
+        assert!(list.body.contains(r#""simkatmawa_code":"4""#));
+    }
+
+    #[test]
+    fn enum_mapping_requires_settings_role() {
+        let body = r#"{"category":"level","internal_code":"NAS","simkatmawa_code":"3"}"#;
+        let response = call(
+            "PUT",
+            "/api/settings/enum-mappings",
+            "t-1",
+            "ADMIN_PRODI",
+            body,
+            &AppState::default(),
+        );
+
+        assert_eq!(response.status_code, 403);
+    }
+
+    fn upload_body(extra: &str) -> String {
+        format!(
+            r#"{{"original_filename":"sertifikat.pdf","mime_type":"application/pdf","size_bytes":10,"checksum":"abc","record_type":"prestasi-mandiri","record_id":"pm-1","document_type":"sertifikat"{extra}}}"#
+        )
+    }
+
+    #[test]
+    fn document_upload_validates_mime_type() {
+        let body = upload_body("").replace("application/pdf", "application/octet-stream");
+        let response = call(
+            "POST",
+            "/api/documents/upload",
+            "ameta",
+            "ADMIN_PT",
+            &body,
+            &AppState::default(),
+        );
 
         assert_eq!(response.status_code, 400);
         assert!(response.body.contains("mime_type must be"));
@@ -351,17 +408,116 @@ mod tests {
 
     #[test]
     fn document_upload_generates_public_url() {
-        let config = AppConfig::from_env();
-        let state = AppState::default();
-        let request = Request::parse(
-            "POST /api/documents/upload HTTP/1.1\r\nx-user-id: u-1\r\nx-tenant-id: ameta\r\nx-user-role: ADMIN_PT\r\n\r\n{\"original_filename\":\"sertifikat.pdf\",\"mime_type\":\"application/pdf\",\"size_bytes\":10,\"checksum\":\"abc\",\"record_type\":\"prestasi-mandiri\",\"record_id\":\"pm-1\",\"document_type\":\"sertifikat\"}",
+        let response = call(
+            "POST",
+            "/api/documents/upload",
+            "ameta",
+            "ADMIN_PT",
+            &upload_body(""),
+            &AppState::default(),
         );
-        let response = route(&request, &config, &state).expect("upload should respond");
 
         assert_eq!(response.status_code, 201);
-        assert!(response
-            .body
-            .contains("https://dokumen.example.ac.id/tenants/ameta/"));
+        assert!(response.body.contains("/tenants/ameta/"));
         assert!(response.body.contains("\"is_locked\":false"));
+    }
+
+    #[test]
+    fn document_upload_ignores_client_lock_flag() {
+        let body = upload_body(r#","is_locked":true"#);
+        let response = call(
+            "POST",
+            "/api/documents/upload",
+            "ameta",
+            "ADMIN_PT",
+            &body,
+            &AppState::default(),
+        );
+
+        assert_eq!(response.status_code, 400);
+    }
+
+    #[test]
+    fn document_upload_rejects_path_traversal_in_key_parts() {
+        let state = AppState::default();
+        for field in ["record_id", "record_type", "document_type"] {
+            let body = upload_body("").replace(
+                &format!(r#""{field}":""#),
+                &format!(r#""{field}":"../../x"#),
+            );
+            let response = call(
+                "POST",
+                "/api/documents/upload",
+                "ameta",
+                "ADMIN_PT",
+                &body,
+                &state,
+            );
+            assert_eq!(response.status_code, 400, "{field}");
+        }
+    }
+
+    #[test]
+    fn document_key_never_contains_unsafe_tenant_segments() {
+        let response = call(
+            "POST",
+            "/api/documents/upload",
+            "../evil",
+            "ADMIN_PT",
+            &upload_body(""),
+            &AppState::default(),
+        );
+
+        assert_eq!(response.status_code, 201);
+        let body: serde_json::Value = serde_json::from_str(&response.body).expect("json body");
+        for field in ["object_key", "public_url"] {
+            let value = body["data"][field].as_str().expect(field);
+            assert!(!value.contains(".."), "{field}: {value}");
+            assert!(value.contains("tenants/---evil/"), "{field}: {value}");
+        }
+    }
+
+    #[test]
+    fn documents_are_isolated_between_tenants() {
+        let state = AppState::default();
+        let created = call(
+            "POST",
+            "/api/documents/upload",
+            "tenant-a",
+            "ADMIN_PT",
+            &upload_body(""),
+            &state,
+        );
+        let path = format!("/api/documents/{}", created_id(&created));
+
+        assert_eq!(
+            call("GET", &path, "tenant-a", "ADMIN_PT", "", &state).status_code,
+            200
+        );
+        assert_eq!(
+            call("GET", &path, "tenant-b", "ADMIN_PT", "", &state).status_code,
+            404
+        );
+        assert_eq!(
+            call("DELETE", &path, "tenant-b", "ADMIN_PT", "", &state).status_code,
+            404
+        );
+        assert_eq!(
+            call("DELETE", &path, "tenant-a", "ADMIN_PT", "", &state).status_code,
+            200
+        );
+    }
+
+    #[test]
+    fn tenant_settings_are_per_tenant() {
+        let state = AppState::default();
+        let body = r#"{"slug":"a","name":"PT A"}"#;
+        assert_eq!(
+            call("PUT", "/api/tenant", "tenant-a", "ADMIN_PT", body, &state).status_code,
+            200
+        );
+
+        let other = call("GET", "/api/tenant", "tenant-b", "ADMIN_PT", "", &state);
+        assert!(other.body.contains(r#""data":null"#));
     }
 }

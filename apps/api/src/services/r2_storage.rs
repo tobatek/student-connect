@@ -1,5 +1,5 @@
 use crate::config::R2Config;
-use crate::validators::upload::safe_filename;
+use crate::validators::upload::{safe_filename, safe_segment};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -14,7 +14,12 @@ pub fn build_object_key(
     original_filename: &str,
 ) -> String {
     format!(
-        "tenants/{tenant_slug}/simkatmawa/{year}/{record_type}/{record_id}/{document_type}/{}-{}",
+        "tenants/{}/simkatmawa/{}/{}/{}/{}/{}-{}",
+        safe_segment(tenant_slug),
+        safe_segment(year),
+        safe_segment(record_type),
+        safe_segment(record_id),
+        safe_segment(document_type),
         unique_component(),
         safe_filename(original_filename)
     )

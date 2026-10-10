@@ -57,20 +57,46 @@ impl Role {
     }
 }
 
-pub fn authorize(request: &Request, allowed_roles: &[Role]) -> Result<AuthContext, String> {
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AuthError {
+    /// Missing or malformed credentials (HTTP 401).
+    Unauthenticated(&'static str),
+    /// Authenticated, but the role may not use the endpoint (HTTP 403).
+    Forbidden(Role),
+}
+
+impl AuthError {
+    pub fn status_code(&self) -> u16 {
+        match self {
+            Self::Unauthenticated(_) => 401,
+            Self::Forbidden(_) => 403,
+        }
+    }
+
+    pub fn message(&self) -> String {
+        match self {
+            Self::Unauthenticated(message) => (*message).to_string(),
+            Self::Forbidden(role) => format!("role {} is not allowed", role.as_str()),
+        }
+    }
+}
+
+pub fn authorize(request: &Request, allowed_roles: &[Role]) -> Result<AuthContext, AuthError> {
     let user_id = request
         .header("x-user-id")
-        .ok_or_else(|| "missing auth user".to_string())?;
+        .filter(|value| !value.trim().is_empty())
+        .ok_or(AuthError::Unauthenticated("missing auth user"))?;
     let tenant_id = request
         .header("x-tenant-id")
-        .ok_or_else(|| "missing auth tenant".to_string())?;
+        .filter(|value| !value.trim().is_empty())
+        .ok_or(AuthError::Unauthenticated("missing auth tenant"))?;
     let role = request
         .header("x-user-role")
         .and_then(Role::parse)
-        .ok_or_else(|| "missing auth role".to_string())?;
+        .ok_or(AuthError::Unauthenticated("missing auth role"))?;
 
     if !allowed_roles.contains(&role) {
-        return Err(format!("role {} is not allowed", role.as_str()));
+        return Err(AuthError::Forbidden(role));
     }
 
     Ok(AuthContext {
@@ -100,6 +126,9 @@ mod tests {
             "GET /api/tenant HTTP/1.1\r\nx-user-id: u-1\r\nx-tenant-id: t-1\r\nx-user-role: MAHASISWA\r\n\r\n",
         );
 
-        assert!(authorize(&request, &[Role::AdminPt]).is_err());
+        assert_eq!(
+            authorize(&request, &[Role::AdminPt]),
+            Err(AuthError::Forbidden(Role::Mahasiswa))
+        );
     }
 }

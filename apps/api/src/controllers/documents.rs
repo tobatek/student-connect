@@ -1,10 +1,10 @@
 use crate::config::AppConfig;
-use crate::http::{escape_json, Request, Response};
+use crate::http::{Request, Response};
 use crate::middleware::rbac::AuthContext;
 use crate::models::document::Document;
 use crate::services::crud::{parse_payload, validation_error};
 use crate::services::r2_storage::{build_object_key, public_url};
-use crate::state::AppState;
+use crate::state::{AppState, DeleteError};
 use crate::validators::upload::validate_upload;
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -12,10 +12,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 static DOCUMENT_COUNTER: AtomicU64 = AtomicU64::new(1);
 
-pub fn list(request: &Request, state: &AppState) -> Response {
+pub fn list(request: &Request, auth: &AuthContext, state: &AppState) -> Response {
     let page = request.query_u64("page", 1, 1, 10_000);
     let limit = request.query_u64("limit", 20, 1, 100);
-    let (documents, total) = state.list_documents(page, limit);
+    let (documents, total) = state.list_documents(&auth.tenant_id, page, limit);
     let documents: Vec<Value> = documents
         .into_iter()
         .map(|document| document.to_json())
@@ -82,10 +82,7 @@ pub fn upload(
         record_type,
         record_id,
         document_type,
-        is_locked: payload
-            .get("is_locked")
-            .and_then(Value::as_bool)
-            .unwrap_or(false),
+        is_locked: false,
         created_at: now_epoch_seconds(),
     };
 
@@ -100,8 +97,8 @@ pub fn upload(
     )
 }
 
-pub fn show(id: &str, state: &AppState) -> Response {
-    match state.get_document(id) {
+pub fn show(id: &str, auth: &AuthContext, state: &AppState) -> Response {
+    match state.get_document(&auth.tenant_id, id) {
         Some(document) => Response::json(
             200,
             json!({
@@ -117,8 +114,8 @@ pub fn show(id: &str, state: &AppState) -> Response {
     }
 }
 
-pub fn delete(id: &str, state: &AppState) -> Response {
-    match state.delete_document(id) {
+pub fn delete(id: &str, auth: &AuthContext, state: &AppState) -> Response {
+    match state.delete_document(&auth.tenant_id, id) {
         Ok(document) => Response::json(
             200,
             json!({
@@ -127,14 +124,11 @@ pub fn delete(id: &str, state: &AppState) -> Response {
             })
             .to_string(),
         ),
-        Err(error) if error.contains("locked") => Response::json(
+        Err(DeleteError::Locked) => Response::json(
             403,
-            format!(
-                r#"{{"status":"error","message":"{}"}}"#,
-                escape_json(&error)
-            ),
+            r#"{"status":"error","message":"locked document cannot be deleted"}"#.to_string(),
         ),
-        Err(_) => Response::json(
+        Err(DeleteError::NotFound) => Response::json(
             404,
             r#"{"status":"error","message":"document not found"}"#.to_string(),
         ),
