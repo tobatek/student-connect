@@ -6,3 +6,9 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Rust
+target/
+
+# Serena
+.serena/cache/

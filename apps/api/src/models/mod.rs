@@ -1,0 +1,13 @@
+pub mod audit_log;
+pub mod document;
+pub mod enum_mapping;
+pub mod institusi;
+pub mod kejuaraan;
+pub mod prestasi_mandiri;
+pub mod record;
+pub mod rekognisi;
+pub mod sertifikasi;
+pub mod simkatmawa_credential;
+pub mod submission_log;
+pub mod tenant;
+pub mod user;
