@@ -45,7 +45,51 @@ pub struct R2Config {
     pub max_upload_mb: u64,
 }
 
+const DEFAULT_SESSION_SECRET: &str = "change-me-with-a-long-random-value";
+const DEFAULT_CREDENTIAL_KEY: &str = "change-me-32-byte-minimum-secret";
+const MIN_SECRET_LEN: usize = 32;
+
 impl AppConfig {
+    pub fn is_production(&self) -> bool {
+        self.server.app_env.eq_ignore_ascii_case("production")
+    }
+
+    /// Problems that must stop the server from starting in production.
+    pub fn production_errors(&self) -> Vec<String> {
+        let mut errors = Vec::new();
+        let security = &self.security;
+
+        if security.session_secret == DEFAULT_SESSION_SECRET
+            || security.session_secret.len() < MIN_SECRET_LEN
+        {
+            errors.push("SESSION_SECRET must be a random value of at least 32 characters".into());
+        }
+        if security.credential_master_key == DEFAULT_CREDENTIAL_KEY
+            || security.credential_master_key.len() < MIN_SECRET_LEN
+        {
+            errors.push(
+                "CREDENTIAL_MASTER_KEY must be a random value of at least 32 characters".into(),
+            );
+        }
+        if security.cors_allowed_origins.is_empty()
+            || security
+                .cors_allowed_origins
+                .iter()
+                .any(|origin| origin == "*")
+        {
+            errors.push("CORS_ALLOWED_ORIGINS must list explicit origins, not '*'".into());
+        }
+        if !self.server.app_public_url.starts_with("https://") {
+            errors.push("APP_PUBLIC_URL must use https in production".into());
+        }
+        errors.push(
+            "x-user-* header auth is a development baseline; real session auth is required first"
+                .into(),
+        );
+
+        errors
+    }
+
     pub fn from_env() -> Self {
         Self {
             server: ServerConfig {
@@ -99,6 +143,21 @@ fn env_or(key: &str, fallback: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn production_rejects_default_secrets_and_wildcard_cors() {
+        let mut config = AppConfig::from_env();
+        config.server.app_env = "production".to_string();
+        config.security.session_secret = DEFAULT_SESSION_SECRET.to_string();
+        config.security.cors_allowed_origins = vec!["*".to_string()];
+
+        let errors = config.production_errors();
+        assert!(config.is_production());
+        assert!(errors.iter().any(|error| error.contains("SESSION_SECRET")));
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("CORS_ALLOWED_ORIGINS")));
+    }
 
     #[test]
     fn reads_defaults_without_hardcoded_secret_values_in_code_paths() {

@@ -184,6 +184,23 @@ Blocker sebelum lanjut Fase 5:
   - Pasang Visual Studio Build Tools C++ sehingga target MSVC punya `link.exe`.
   - Gunakan crate random yang bisa berjalan pada toolchain saat ini, lalu verifikasi dengan `cargo test`.
 
+## Review Fase 1-3 (2026-10-10)
+
+Perbaikan yang sudah diterapkan:
+
+- Fase 1: `target/` di-ignore, dependency dan config sisa AI Studio dihapus, README ditambahkan, restrukturisasi monorepo dicommit.
+- Fase 3: semua akses record/dokumen/tenant di-scope `tenant_id` (IDOR ditutup); field tulis di-allowlist per entitas (`status`, `created_by`, `tenant_id`, `is_locked` hanya server); validasi enum/panjang/URL/tanggal; `PUT /api/settings/enum-mappings` menjadi upsert khusus `SUPER_ADMIN`/`ADMIN_PT`; record `QUEUED/SENDING/SENT` tidak bisa diedit (409); audit create/update memakai nama entitas tanpa menyalin body.
+- Fase 4 (celah ikut tertutup): `record_type`/`record_id`/`document_type`/`tahun` divalidasi allowlist sebelum masuk object key.
+- Fase 2: CORS allowlist + preflight, security headers, batas header 16 KiB dan body 1 MiB (431/413), thread per koneksi (maks 64, selebihnya 503), deadline baca request, `Transfer-Encoding` ditolak, query di-percent-decode, `escape_json` lengkap, error 500 tidak membocorkan detail, `AuthError` bertipe (401/403).
+- Server menolak start di `APP_ENV=production` bila secret default/pendek, CORS `*`, URL bukan https, atau auth masih berbasis header.
+
+Belum dikerjakan (butuh keputusan/arsitektur):
+
+- Koneksi database nyata + migration runner (data masih in-memory; SQL memakai `tenant_id UUID`, kode memakai string).
+- Login, session/token dengan expiry, hash password (Argon2id), audit log ke tabel `audit_logs`.
+- Kepemilikan data per peran (MAHASISWA/DOSEN_PEMBINA saat ini membaca semua record tenant-nya).
+- Keputusan Loco.rs/Axum vs server TCP buatan sendiri.
+
 ## Toolchain dan Perintah Verifikasi
 
 Rust MSVC sempat gagal karena `link.exe` tidak ada.
@@ -206,7 +223,7 @@ pnpm --filter @students-connect/web build
 
 Hasil terakhir:
 
-- Backend test: `14 passed`.
+- Backend test: `43 passed`, clippy bersih.
 - Backend fmt check: berhasil.
 - Frontend lint: berhasil.
 - Frontend build: berhasil.

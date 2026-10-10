@@ -1,6 +1,7 @@
 use crate::config::AppConfig;
 use crate::controllers::{documents, health, session, tenant};
 use crate::http::{Request, Response};
+use crate::middleware::cors;
 use crate::middleware::rbac::{authorize, AuthContext, AuthError, Role};
 use crate::models::record::RecordKind;
 use crate::services::audit_log::{AuditAction, AuditLogService};
@@ -22,6 +23,15 @@ const RECORD_ROUTES: &[(&str, RecordKind)] = &[
     ("/api/kejuaraan", RecordKind::Kejuaraan),
     ("/api/institusi", RecordKind::Institusi),
 ];
+
+/// Entry point for every parsed request: CORS preflight, routing, then CORS headers.
+pub fn handle(request: &Request, config: &AppConfig, state: &AppState) -> Response {
+    if request.method == "OPTIONS" {
+        return cors::preflight(request, config);
+    }
+    let response = route(request, config, state).unwrap_or_else(Response::internal_error);
+    cors::apply(request, config, response)
+}
 
 pub fn route(request: &Request, config: &AppConfig, state: &AppState) -> Result<Response, String> {
     let method = request.method.as_str();
@@ -161,6 +171,28 @@ mod tests {
     fn created_id(response: &Response) -> String {
         let body: serde_json::Value = serde_json::from_str(&response.body).expect("json body");
         body["data"]["id"].as_str().expect("id").to_string()
+    }
+
+    #[test]
+    fn handle_adds_cors_headers_for_allowed_origin_only() {
+        let config = AppConfig::from_env();
+        let state = AppState::default();
+        let allowed = &config.security.cors_allowed_origins[0];
+        let has_origin_header = |response: &Response| {
+            response
+                .headers
+                .iter()
+                .any(|(name, _)| *name == "Access-Control-Allow-Origin")
+        };
+
+        let request = Request::parse(&format!(
+            "GET /api/health HTTP/1.1\r\nOrigin: {allowed}\r\n\r\n"
+        ));
+        assert!(has_origin_header(&handle(&request, &config, &state)));
+
+        let request =
+            Request::parse("GET /api/health HTTP/1.1\r\nOrigin: https://evil.example\r\n\r\n");
+        assert!(!has_origin_header(&handle(&request, &config, &state)));
     }
 
     #[test]

@@ -6,88 +6,51 @@ mod http;
 mod jobs;
 mod middleware;
 mod models;
+mod server;
 mod services;
 mod state;
 mod validators;
 
 use crate::config::AppConfig;
-use crate::http::{Request, Response};
 use crate::state::AppState;
-use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
-use std::time::Duration;
+use std::net::TcpListener;
+use std::process::ExitCode;
+use std::sync::Arc;
 
-fn main() -> std::io::Result<()> {
+fn main() -> ExitCode {
     let config = AppConfig::from_env();
-    let state = AppState::default();
+
+    if config.is_production() {
+        let errors = config.production_errors();
+        if !errors.is_empty() {
+            eprintln!("refusing to start in production:");
+            for error in errors {
+                eprintln!("  - {error}");
+            }
+            return ExitCode::FAILURE;
+        }
+    } else {
+        eprintln!(
+            "warning: {} mode uses header-based auth (x-user-id/x-tenant-id/x-user-role); development only",
+            config.server.app_env
+        );
+    }
+
     let database = database::DatabaseConnection::from_config(&config.database);
     database.log_startup_status();
 
-    let listener = TcpListener::bind(&config.server.bind_address)?;
-
+    let listener = match TcpListener::bind(&config.server.bind_address) {
+        Ok(listener) => listener,
+        Err(error) => {
+            eprintln!("cannot bind {}: {error}", config.server.bind_address);
+            return ExitCode::FAILURE;
+        }
+    };
     println!(
         "students-connect-api listening on http://{}",
         config.server.bind_address
     );
 
-    for stream in listener.incoming() {
-        match stream {
-            Ok(stream) => handle_connection(stream, &config, &state),
-            Err(error) => eprintln!("connection error: {error}"),
-        }
-    }
-
-    Ok(())
-}
-
-fn handle_connection(mut stream: TcpStream, config: &AppConfig, state: &AppState) {
-    let request = match read_http_request(&mut stream) {
-        Ok(request) => request,
-        Err(error) => {
-            eprintln!("read error: {error}");
-            return;
-        }
-    };
-    let request = Request::parse(&request);
-    let response = app::route(&request, config, state).unwrap_or_else(Response::internal_error);
-    let response = response.to_http();
-
-    if let Err(error) = stream.write_all(response.as_bytes()) {
-        eprintln!("write error: {error}");
-    }
-}
-
-fn read_http_request(stream: &mut TcpStream) -> std::io::Result<String> {
-    stream.set_read_timeout(Some(Duration::from_secs(2)))?;
-    let mut bytes = Vec::new();
-    let mut buffer = [0; 4096];
-
-    loop {
-        let read = stream.read(&mut buffer)?;
-        if read == 0 {
-            break;
-        }
-        bytes.extend_from_slice(&buffer[..read]);
-
-        if request_is_complete(&bytes) {
-            break;
-        }
-    }
-
-    Ok(String::from_utf8_lossy(&bytes).to_string())
-}
-
-fn request_is_complete(bytes: &[u8]) -> bool {
-    let request = String::from_utf8_lossy(bytes);
-    let Some((head, body)) = request.split_once("\r\n\r\n") else {
-        return false;
-    };
-    let content_length = head
-        .lines()
-        .find_map(|line| line.split_once(':'))
-        .filter(|(name, _)| name.eq_ignore_ascii_case("content-length"))
-        .and_then(|(_, value)| value.trim().parse::<usize>().ok())
-        .unwrap_or(0);
-
-    body.as_bytes().len() >= content_length
+    server::serve(listener, Arc::new(config), Arc::new(AppState::default()));
+    ExitCode::SUCCESS
 }
