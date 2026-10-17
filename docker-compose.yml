@@ -1,0 +1,21 @@
+# Layanan pendukung pengembangan. Backend & web dijalankan dari host (cargo loco start, pnpm dev).
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-student_connect}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-student_connect}
+      POSTGRES_DB: ${POSTGRES_DB:-student_connect}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-student_connect}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:

@@ -1,17 +1,19 @@
 {
   "name": "students-connect",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
+  "packageManager": "pnpm@10.33.2",
   "scripts": {
     "dev": "pnpm --filter @students-connect/web dev",
     "dev:web": "pnpm --filter @students-connect/web dev",
-    "dev:api": "cargo run --manifest-path apps/api/Cargo.toml",
-    "build": "pnpm --filter @students-connect/web build && cargo build --manifest-path apps/api/Cargo.toml",
+    "dev:server": "cd apps/server && cargo loco start",
+    "db:up": "docker compose up -d db",
+    "build": "pnpm --filter @students-connect/web build && cd apps/server && cargo build --release",
     "build:web": "pnpm --filter @students-connect/web build",
-    "build:api": "cargo build --manifest-path apps/api/Cargo.toml",
-    "lint": "pnpm --filter @students-connect/web lint && cargo fmt --manifest-path apps/api/Cargo.toml --check",
-    "test:api": "cargo test --manifest-path apps/api/Cargo.toml",
-    "check:api": "cargo check --manifest-path apps/api/Cargo.toml"
+    "typecheck": "pnpm -r typecheck",
+    "test:web": "pnpm --filter @students-connect/web test",
+    "test:server": "cd apps/server && cargo test",
+    "lint:server": "cd apps/server && cargo fmt --all --check && cargo clippy --all-targets -- -D warnings"
   }
 }

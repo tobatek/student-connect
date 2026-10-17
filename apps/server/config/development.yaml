@@ -1,0 +1,162 @@
+# Konfigurasi pengembangan. Semua nilai di sini AMAN hanya untuk mesin lokal.
+
+logger:
+  enable: true
+  pretty_backtrace: true
+  level: <%= get_env(name="LOG_LEVEL", default="debug") %>
+  format: compact
+
+server:
+  port: <%= get_env(name="PORT", default="5150") %>
+  binding: <%= get_env(name="BINDING", default="localhost") %>
+  host: http://localhost:5150
+  middlewares:
+    limit_payload:
+      enable: true
+      body_limit: 1mb
+    timeout_request:
+      enable: true
+      timeout: 30000
+    compression:
+      enable: true
+    etag:
+      enable: false
+    powered_by:
+      enable: false
+    remote_ip:
+      enable: true
+      source: ConnectInfo
+    # Hanya dev: layani dokumen lokal sebagai pengganti URL publik R2.
+    static:
+      enable: true
+      must_exist: false
+      precompressed: false
+      folder:
+        uri: "/files"
+        path: "uploads"
+      fallback: "uploads/.gitkeep"
+    cors:
+      enable: true
+      allow_origins:
+        - http://localhost:3000
+      allow_headers:
+        - content-type
+        - x-csrf-token
+      allow_methods:
+        - GET
+        - POST
+        - PUT
+        - PATCH
+        - DELETE
+      allow_credentials: true
+      max_age: 3600
+    secure_headers:
+      enable: true
+      preset: empty
+      overrides:
+        Content-Security-Policy: "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+        Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options: "nosniff"
+        X-Frame-Options: "DENY"
+        Referrer-Policy: "no-referrer"
+        Cross-Origin-Opener-Policy: "same-origin"
+        Cross-Origin-Resource-Policy: "same-site"
+        Permissions-Policy: "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+        Cache-Control: "no-store"
+
+workers:
+  mode: BackgroundQueue
+
+queue:
+  kind: Postgres
+  uri: <%= get_env(name="DATABASE_URL", default="postgres://student_connect:student_connect@localhost:5432/student_connect") %>
+  dangerously_flush: false
+
+scheduler:
+  output: stdout
+  jobs:
+    purge_sessions:
+      run: "sessions:purge"
+      schedule: "0 0 3 * * *"
+      tags: ["maintenance"]
+    recover_submissions:
+      run: "submissions:recover"
+      schedule: "0 */10 * * * *"
+      tags: ["integration"]
+    verify_audit_chain:
+      run: "audit:verify"
+      schedule: "0 30 3 * * *"
+      tags: ["security"]
+    # Keduanya no-op bila sso.enabled / master_sync.enabled bernilai false.
+    sync_master:
+      run: "sync:master"
+      schedule: "0 0 2 * * *"
+      tags: ["integration"]
+    sso_sessions_check:
+      run: "sso:sessions-check"
+      schedule: "0 */3 * * * *"
+      tags: ["security"]
+
+database:
+  uri: <%= get_env(name="DATABASE_URL", default="postgres://student_connect:student_connect@localhost:5432/student_connect") %>
+  enable_logging: <%= get_env(name="DB_LOGGING", default="false") %>
+  connect_timeout: <%= get_env(name="DB_CONNECT_TIMEOUT", default="3000") %>
+  idle_timeout: <%= get_env(name="DB_IDLE_TIMEOUT", default="500") %>
+  min_connections: <%= get_env(name="DB_MIN_CONNECTIONS", default="1") %>
+  max_connections: <%= get_env(name="DB_MAX_CONNECTIONS", default="5") %>
+  auto_migrate: true
+  dangerously_truncate: false
+  dangerously_recreate: false
+
+# Pengaturan aplikasi (lihat src/settings.rs).
+settings:
+  # Kunci pengembangan. Production WAJIB menyuplai kunci sendiri (base64 dari 32 byte acak).
+  credential_master_key: <%= get_env(name="CREDENTIAL_MASTER_KEY", default="ZGV2LW9ubHkta2V5LWRvLW5vdC11c2UtaW4tcHJvZCE=") %>
+  session:
+    cookie_name: sc_session
+    cookie_secure: false # http://localhost; production wajib true
+    idle_minutes: 30
+    absolute_hours: 8
+    max_sessions_per_user: 5
+  login:
+    max_failed_attempts: 5
+    lockout_minutes: 15
+    ip_attempts_per_minute: 30
+  simkatmawa:
+    allowed_hosts:
+      - simkatmawa.kemdiktisaintek.go.id
+    default_api_url: https://simkatmawa.kemdiktisaintek.go.id
+    timeout_seconds: 20
+  storage:
+    driver: local
+    public_base_url: http://localhost:5150/files
+    max_upload_mb: 15
+  # Klien SSO Portal. Rahasia (SSO_APP_TOKEN) hanya dari env/secret manager.
+  sso:
+    enabled: <%= get_env(name="SSO_ENABLED", default="false") %>
+    portal_base_url: "<%= get_env(name="SSO_PORTAL_BASE_URL", default="") %>"
+    allowed_hosts:
+      - "<%= get_env(name="SSO_PORTAL_HOST", default="") %>"
+    client_id: "<%= get_env(name="SSO_CLIENT_ID", default="") %>"
+    app_token: "<%= get_env(name="SSO_APP_TOKEN", default="") %>"
+    redirect_uri: "<%= get_env(name="SSO_REDIRECT_URI", default="") %>"
+    tenant_slug: "<%= get_env(name="SSO_TENANT_SLUG", default="") %>"
+    password_login_enabled: <%= get_env(name="SSO_PASSWORD_LOGIN_ENABLED", default="true") %>
+    session_check_enabled: <%= get_env(name="SSO_SESSION_CHECK_ENABLED", default="true") %>
+    state_ttl_seconds: 600
+    post_login_url: /
+    login_error_url: /masuk
+    default_student_role: MAHASISWA
+    # Peran Portal -> peran lokal untuk staf yang baru pertama kali masuk. SUPER_ADMIN ditolak.
+    # Staf tanpa pemetaan (dan tanpa akun lokal) ditolak. Contoh:
+    #   dosen: DOSEN_PEMBINA
+    #   kemahasiswaan: ADMIN_KEMAHASISWAAN
+    role_map: {}
+  master_sync:
+    enabled: <%= get_env(name="MASTER_SYNC_ENABLED", default="false") %>
+    page_size: 200
+    max_pages: 500
+    max_attempts: 4
+    base_backoff_ms: 500
+    page_delay_ms: 200
+    max_deactivate_percent: 30

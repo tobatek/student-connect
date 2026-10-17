@@ -1,21 +1,120 @@
-@import "tailwindcss";
+@import 'tailwindcss';
+@import '@fontsource/atkinson-hyperlegible/400.css';
+@import '@fontsource/atkinson-hyperlegible/400-italic.css';
+@import '@fontsource/atkinson-hyperlegible/700.css';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jost/600.css';
+@import '@fontsource/jost/700.css';
 
-@layer base {
-  body {
-    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+/*
+ * Design tokens — design-system/student-connect/MASTER.md
+ * Gaya "Accessible & Ethical": kontras tinggi, fokus jelas, target sentuh 44px.
+ */
+@theme {
+  --font-sans: 'Atkinson Hyperlegible', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Jost', 'Atkinson Hyperlegible', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-canvas: #f6f8fb;
+  --color-surface: #ffffff;
+  --color-line: #e2e8f0;
+
+  --color-brand-50: #f0f9ff;
+  --color-brand-100: #e0f2fe;
+  --color-brand-200: #bae6fd;
+  --color-brand-300: #7dd3fc;
+  --color-brand-400: #38bdf8;
+  --color-brand-500: #0ea5e9;
+  --color-brand-600: #0284c7;
+  --color-brand-700: #0369a1;
+  --color-brand-800: #075985;
+  --color-brand-900: #0c4a6e;
+
+  --color-night-900: #1f2144;
+  --color-navy-800: #172033;
+  --color-navy-900: #0f172a;
+  --color-navy-950: #0a1020;
+
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 2px 6px rgb(15 23 42 / 0.05);
+  --shadow-pop: 0 10px 30px -8px rgb(15 23 42 / 0.25), 0 4px 10px -4px rgb(15 23 42 / 0.12);
+
+  --animate-fade-in: fade-in 160ms ease-out both;
+  --animate-slide-in: slide-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-rise: rise 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-float: float-y 9s ease-in-out infinite;
+  --animate-float-slow: float-y 13s ease-in-out infinite;
+  --animate-enter: enter-up 700ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-pan: pan-x 40s ease-in-out infinite alternate;
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
   }
-  
-  code, kbd, samp, pre, .font-mono {
-    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-variant-numeric: tabular-nums;
+  @keyframes slide-in {
+    from { transform: translateX(24px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+  @keyframes float-y {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-14px); }
+  }
+  @keyframes enter-up {
+    from { transform: translateY(28px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  @keyframes pan-x {
+    from { transform: translateX(-3%); }
+    to { transform: translateX(3%); }
+  }
+  @keyframes rise {
+    from { transform: translateY(8px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
   }
 }
 
-@media print {
-  .no-print {
-    display: none !important;
+@layer base {
+  html {
+    color-scheme: light;
+    -webkit-text-size-adjust: 100%;
   }
-  .print-only {
-    display: block !important;
+  body {
+    background: var(--color-canvas);
+    color: #0f172a;
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  :focus-visible {
+    outline: 3px solid color-mix(in oklab, var(--color-brand-600) 70%, white);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  summary,
+  select {
+    cursor: pointer;
+  }
+  ::selection {
+    background: var(--color-brand-200);
+  }
+  dialog {
+    color: inherit;
+  }
+  dialog::backdrop {
+    background: rgb(10 16 32 / 0.55);
+    backdrop-filter: blur(2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

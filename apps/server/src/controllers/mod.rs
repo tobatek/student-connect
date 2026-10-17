@@ -1,0 +1,15 @@
+pub mod auth;
+pub mod dashboard;
+pub mod documents;
+pub mod institusi;
+pub mod kejuaraan;
+pub mod logs;
+pub mod lookups;
+pub mod master_sync;
+pub mod records;
+pub mod settings;
+pub mod simkatmawa;
+pub mod sso;
+pub mod support;
+pub mod tenant;
+pub mod users;

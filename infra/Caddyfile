@@ -1,0 +1,23 @@
+# Contoh: SPA statis + reverse proxy API pada satu origin (TLS otomatis).
+app.kampus.ac.id {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Content-Security-Policy "default-src 'self'; img-src 'self' https: data:; frame-src https:; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+	}
+
+	handle /api/* {
+		reverse_proxy 127.0.0.1:5150
+	}
+
+	handle {
+		root * /srv/student-connect/web
+		try_files {path} /index.html
+		file_server
+	}
+}

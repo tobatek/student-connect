@@ -1,0 +1,46 @@
+logger:
+  enable: true
+  level: error
+  format: compact
+
+server:
+  port: 5150
+  binding: localhost
+  host: http://localhost:5150
+  middlewares:
+    remote_ip:
+      enable: true
+      source: ConnectInfo
+    powered_by:
+      enable: false
+
+workers:
+  mode: ForegroundBlocking
+
+database:
+  uri: <%= get_env(name="TEST_DATABASE_URL", default="postgres://student_connect:student_connect@localhost:5432/student_connect_test") %>
+  enable_logging: false
+  connect_timeout: 3000
+  idle_timeout: 500
+  min_connections: 1
+  max_connections: 5
+  auto_migrate: true
+  dangerously_truncate: true
+  dangerously_recreate: false
+
+settings:
+  credential_master_key: ZGV2LW9ubHkta2V5LWRvLW5vdC11c2UtaW4tcHJvZCE=
+  session:
+    cookie_name: sc_session
+    cookie_secure: false
+    idle_minutes: 30
+    absolute_hours: 8
+    max_sessions_per_user: 5
+  login:
+    max_failed_attempts: 3
+    lockout_minutes: 15
+    ip_attempts_per_minute: 1000
+  storage:
+    driver: local
+    public_base_url: http://localhost:5150/files
+    max_upload_mb: 1

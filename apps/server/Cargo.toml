@@ -1,0 +1,62 @@
+[workspace]
+
+[package]
+name = "student_connect"
+version = "0.1.0"
+edition = "2021"
+publish = false
+default-run = "student_connect-cli"
+rust-version = "1.94"
+
+[workspace.dependencies]
+loco-rs = { version = "1.2.0", default-features = false, features = [
+  "auth",
+  "cli",
+  "with-db",
+  "cache_inmem",
+  "worker",
+  "storage_aws_s3",
+] }
+
+[dependencies]
+loco-rs = { workspace = true }
+migration = { path = "migration" }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+async-trait = "0.1"
+axum = "0.8"
+tokio = { version = "1.45", default-features = false, features = ["rt-multi-thread", "macros"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+sea-orm = { version = "2.0", features = ["sqlx-postgres", "runtime-tokio-rustls", "macros"] }
+chrono = "0.4"
+uuid = { version = "1.6", features = ["v4", "serde"] }
+validator = { version = "0.20", features = ["derive"] }
+regex = "1.11"
+
+# Keamanan: kripto murni-Rust, perbandingan waktu-konstan, hash integritas.
+aes-gcm = "0.10"
+sha2 = "0.10"
+base64 = "0.22"
+subtle = "2.6"
+hkdf = "0.12"
+url = "2"
+
+# Klien HTTP untuk integrasi SIMKATMAWA (tanpa redirect, TLS via rustls).
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+bytes = "1"
+
+[[bin]]
+name = "student_connect-cli"
+path = "src/bin/main.rs"
+required-features = []
+
+[dev-dependencies]
+loco-rs = { workspace = true, features = ["testing"] }
+serial_test = "3.1.1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

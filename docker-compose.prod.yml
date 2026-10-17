@@ -1,0 +1,100 @@
+# Stack server: Postgres baru + API (+ worker) + scheduler.
+#
+#   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+#
+# Aman untuk redeploy: data Postgres ada di volume bernama TETAP (`student_connect_pgdata`) yang
+# tidak ikut terhapus oleh `up`, `up --build`, `restart`, `pull`, maupun `down`. Postgres hanya
+# menjalankan inisialisasi (membuat user/database/sandi) saat volume masih KOSONG, jadi mengganti
+# POSTGRES_PASSWORD di .env setelah itu TIDAK mengubah sandi yang sudah ada (ubah lewat ALTER USER).
+#
+# JANGAN pakai `docker compose down -v` atau `docker volume rm student_connect_pgdata`: itu
+# menghapus seluruh database. Skema dimigrasi otomatis oleh server (DB_AUTO_MIGRATE) tanpa menghapus data.
+#
+# SPA (apps/web/dist) dan TLS dilayani Caddy di host (lihat infra/Caddyfile) yang meneruskan /api ke 127.0.0.1:5150.
+
+name: student-connect-prod
+
+x-server: &server
+  build:
+    context: .
+    dockerfile: infra/Dockerfile.server
+  image: student-connect-server:latest
+  restart: unless-stopped
+  depends_on:
+    db:
+      condition: service_healthy
+  environment: &server-env
+    LOCO_ENV: production
+    DATABASE_URL: postgres://${POSTGRES_USER:-student_connect}:${POSTGRES_PASSWORD:?isi POSTGRES_PASSWORD di .env}@db:5432/${POSTGRES_DB:-student_connect}
+    HOST: ${HOST:?isi HOST (URL publik API) di .env}
+    CORS_ORIGIN: ${CORS_ORIGIN:?isi CORS_ORIGIN di .env}
+    CREDENTIAL_MASTER_KEY: ${CREDENTIAL_MASTER_KEY:?isi CREDENTIAL_MASTER_KEY di .env}
+    R2_BUCKET: ${R2_BUCKET:?isi R2_BUCKET di .env}
+    R2_ENDPOINT: ${R2_ENDPOINT:?isi R2_ENDPOINT di .env}
+    R2_REGION: ${R2_REGION:-auto}
+    R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?isi R2_ACCESS_KEY_ID di .env}
+    R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?isi R2_SECRET_ACCESS_KEY di .env}
+    R2_PUBLIC_BASE_URL: ${R2_PUBLIC_BASE_URL:?isi R2_PUBLIC_BASE_URL di .env}
+    R2_MAX_UPLOAD_MB: ${R2_MAX_UPLOAD_MB:-15}
+    # Satu instance: boleh migrasi otomatis. Bila >1 instance, set false dan migrasi sebagai langkah rilis.
+    DB_AUTO_MIGRATE: ${DB_AUTO_MIGRATE:-true}
+    SSO_ENABLED: ${SSO_ENABLED:-false}
+    SSO_PORTAL_BASE_URL: ${SSO_PORTAL_BASE_URL:-}
+    SSO_PORTAL_HOST: ${SSO_PORTAL_HOST:-}
+    SSO_CLIENT_ID: ${SSO_CLIENT_ID:-}
+    SSO_APP_TOKEN: ${SSO_APP_TOKEN:-}
+    SSO_REDIRECT_URI: ${SSO_REDIRECT_URI:-}
+    SSO_TENANT_SLUG: ${SSO_TENANT_SLUG:-}
+    SSO_PASSWORD_LOGIN_ENABLED: ${SSO_PASSWORD_LOGIN_ENABLED:-true}
+    SSO_SESSION_CHECK_ENABLED: ${SSO_SESSION_CHECK_ENABLED:-true}
+    MASTER_SYNC_ENABLED: ${MASTER_SYNC_ENABLED:-false}
+  networks: [internal]
+
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: student-connect-prod-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-student_connect}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?isi POSTGRES_PASSWORD di .env}
+      POSTGRES_DB: ${POSTGRES_DB:-student_connect}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Tidak dipublikasikan ke host/internet: hanya server di jaringan `internal` yang bisa menjangkau.
+    networks: [internal]
+    stop_grace_period: 60s
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  # API + worker antrean SIMKATMAWA + job sinkron manual.
+  server:
+    <<: *server
+    container_name: student-connect-prod-server
+    command: ["/app/server", "start", "--server-and-worker"]
+    # Hanya loopback; Caddy di host yang menerima trafik publik.
+    ports:
+      - "127.0.0.1:5150:5150"
+
+  # Penjadwal: sync:master (02:00), sso:sessions-check, sessions:purge, submissions:recover, audit:verify.
+  scheduler:
+    <<: *server
+    container_name: student-connect-prod-scheduler
+    command: ["/app/server", "scheduler"]
+    depends_on:
+      db:
+        condition: service_healthy
+      server:
+        condition: service_started
+
+networks:
+  internal:
+
+volumes:
+  pgdata:
+    # Nama tetap, tidak berawalan nama project, dan tidak dihapus oleh `down`.
+    name: student_connect_pgdata

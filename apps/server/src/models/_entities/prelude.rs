@@ -1,0 +1,14 @@
+pub use super::audit_logs::Entity as AuditLogs;
+pub use super::documents::Entity as Documents;
+pub use super::enum_mappings::Entity as EnumMappings;
+pub use super::institusi_reports::Entity as InstitusiReports;
+pub use super::kejuaraan::Entity as Kejuaraan;
+pub use super::master_employees::Entity as MasterEmployees;
+pub use super::master_students::Entity as MasterStudents;
+pub use super::records::Entity as Records;
+pub use super::sync_runs::Entity as SyncRuns;
+pub use super::sessions::Entity as Sessions;
+pub use super::simkatmawa_credentials::Entity as SimkatmawaCredentials;
+pub use super::submission_logs::Entity as SubmissionLogs;
+pub use super::tenants::Entity as Tenants;
+pub use super::users::Entity as Users;

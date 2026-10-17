@@ -1,0 +1,16 @@
+# Build: docker build -f infra/Dockerfile.server -t student-connect-server .
+FROM rust:1-bookworm AS build
+WORKDIR /src
+COPY apps/server/ ./
+RUN cargo build --release --bin student_connect-cli
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 10001 app
+WORKDIR /app
+COPY --from=build /src/target/release/student_connect-cli /app/server
+COPY apps/server/config /app/config
+USER app
+ENV LOCO_ENV=production
+EXPOSE 5150
+CMD ["/app/server", "start", "--server-and-worker"]

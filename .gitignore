@@ -1,14 +1,19 @@
 node_modules/
-build/
 dist/
+build/
 coverage/
 .DS_Store
 *.log
-.env*
+.env
+.env.*
 !.env.example
 
 # Rust
 target/
+
+# Dokumen unggahan lokal (dev)
+apps/server/uploads/*
+!apps/server/uploads/.gitkeep
 
 # Serena
 .serena/cache/
