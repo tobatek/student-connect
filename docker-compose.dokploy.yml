@@ -5,14 +5,16 @@
 #
 # Beda dari docker-compose.prod.yml:
 #  - Tidak ada `ports`/Caddy: TLS dan routing ditangani Traefik Dokploy. Tambahkan Domain di tab
-#    Domains: Service Name `server`, Port 5150, Path `/api`, dan satu domain lagi dengan Path `/files`
-#    (tautan dokumen publik permanen; bucket R2 tetap privat). R2_PUBLIC_BASE_URL = https://<domain-app>/files.
+#    Domains, SATU host (mis. app.kampus.ac.id) dengan tiga entri:
+#      Path `/`      -> Service `web`,    Port 8080  (SPA)
+#      Path `/api`   -> Service `server`, Port 5150  (API)
+#      Path `/files` -> Service `server`, Port 5150  (tautan dokumen publik permanen; bucket R2 tetap privat)
+#    Strip Path dimatikan untuk ketiganya. HOST, CORS_ORIGIN = https://<host>; R2_PUBLIC_BASE_URL = https://<host>/files.
 #  - `server` ikut jaringan eksternal `dokploy-network` agar terjangkau Traefik; db tetap hanya di `internal`.
 #  - Tanpa `container_name` (Dokploy memberi nama sendiri dan memakai nama itu untuk log/monitoring).
 #  - Build memakai konteks Git karena mode Raw tidak meng-clone repo. Repo privat: pakai
 #    https://<token>@github.com/tobatek/student-connect.git, atau build/push image lebih dulu lalu
 #    ganti blok `build` dengan `image: <registry>/student-connect-server:<tag>`.
-#  - SPA (apps/web) tidak termasuk; sajikan lewat service/aplikasi Dokploy terpisah pada origin yang sama.
 #
 # Data Postgres ada di volume bernama TETAP `student_connect_pgdata`; jangan hapus volume ini.
 
@@ -80,6 +82,17 @@ services:
     expose:
       - "5150"
     networks: [internal, dokploy-network]
+
+  # SPA (apps/web) disajikan nginx. Tidak memanggil API lintas origin: /api dan /files diteruskan Traefik ke `server`.
+  web:
+    build:
+      context: https://github.com/tobatek/student-connect.git#main
+      dockerfile: infra/Dockerfile.web
+    image: student-connect-web:latest
+    restart: unless-stopped
+    expose:
+      - "8080"
+    networks: [dokploy-network]
 
   # Penjadwal: sync:master (02:00), sso:sessions-check, sessions:purge, submissions:recover, audit:verify.
   scheduler:
