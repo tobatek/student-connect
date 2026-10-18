@@ -1,7 +1,7 @@
 import type { DocumentItem, DocumentRecordType, DocumentType } from '@students-connect/contracts';
 import { api } from '@/lib/api';
 
-export const MAX_UPLOAD_MB = 15;
+export const MAX_UPLOAD_MB = 5;
 export const ACCEPTED_TYPES = 'application/pdf,image/jpeg,image/png';
 
 export interface UploadTarget {

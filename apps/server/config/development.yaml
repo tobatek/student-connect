@@ -130,7 +130,7 @@ settings:
   storage:
     driver: local
     public_base_url: http://localhost:5150/files
-    max_upload_mb: 15
+    max_upload_mb: 5
   # Klien SSO Portal. Rahasia (SSO_APP_TOKEN) hanya dari env/secret manager.
   sso:
     enabled: <%= get_env(name="SSO_ENABLED", default="false") %>

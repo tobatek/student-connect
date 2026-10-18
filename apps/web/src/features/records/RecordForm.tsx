@@ -324,7 +324,7 @@ export function RecordForm({ kind, record, open, onClose }: { kind: RecordKind; 
           )}
         </Section>
 
-        <Section title="Bukti dokumen" description="SIMKATMAWA menerima tautan. Tempel URL atau unggah berkas (PDF/JPG/PNG, maks 15 MB).">
+        <Section title="Bukti dokumen" description="SIMKATMAWA menerima tautan. Tempel URL atau unggah berkas (PDF/JPG/PNG, maks 5 MB).">
           <LinkField label="Tautan daftar peserta" required value={form.url_peserta} onChange={(v) => set('url_peserta', v)} error={err('url_peserta')} upload={upload('peserta')} />
           <LinkField label="Tautan sertifikat" required value={form.url_sertifikat} onChange={(v) => set('url_sertifikat', v)} error={err('url_sertifikat')} upload={upload('sertifikat')} />
           <LinkField label="Tautan foto UPP" value={form.url_foto_upp} onChange={(v) => set('url_foto_upp', v)} error={err('url_foto_upp')} upload={upload('foto-upp')} />

@@ -129,7 +129,7 @@ settings:
     access_key_id: <%= get_env(name="R2_ACCESS_KEY_ID") %>
     secret_access_key: <%= get_env(name="R2_SECRET_ACCESS_KEY") %>
     public_base_url: <%= get_env(name="R2_PUBLIC_BASE_URL") %>
-    max_upload_mb: <%= get_env(name="R2_MAX_UPLOAD_MB", default="15") %>
+    max_upload_mb: <%= get_env(name="R2_MAX_UPLOAD_MB", default="5") %>
   # Klien SSO Portal. Rahasia (SSO_APP_TOKEN) hanya dari env/secret manager.
   sso:
     enabled: <%= get_env(name="SSO_ENABLED", default="false") %>

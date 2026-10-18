@@ -28,7 +28,7 @@ use crate::{
 };
 
 /// Batas keras body untuk rute unggah; batas efektif per-konfigurasi diperiksa di handler.
-const HARD_BODY_LIMIT: usize = 17 * 1024 * 1024;
+const HARD_BODY_LIMIT: usize = 7 * 1024 * 1024;
 
 #[derive(Debug, Deserialize)]
 struct ListParams {
