@@ -66,6 +66,7 @@ impl Hooks for App {
             .add_route(controllers::kejuaraan::routes())
             .add_route(controllers::institusi::routes())
             .add_route(controllers::documents::routes())
+            .add_route(controllers::documents::public_routes())
             .add_route(controllers::simkatmawa::routes())
             .add_route(controllers::settings::routes())
             .add_route(controllers::logs::routes())

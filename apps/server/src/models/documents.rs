@@ -88,6 +88,18 @@ impl Model {
             .ok_or(ModelError::EntityNotFound)
     }
 
+    /// Pencarian lintas tenant khusus untuk tautan publik; `pid` acak (UUID v4) berperan sebagai kode tautan.
+    ///
+    /// # Errors
+    /// `EntityNotFound` bila kode tidak dikenal.
+    pub async fn find_by_pid(db: &DatabaseConnection, pid: Uuid) -> ModelResult<Self> {
+        Entity::find()
+            .filter(Column::Pid.eq(pid))
+            .one(db)
+            .await?
+            .ok_or(ModelError::EntityNotFound)
+    }
+
     /// Mengunci semua dokumen yang tautannya dipakai record (setelah terkirim ke SIMKATMAWA).
     ///
     /// # Errors

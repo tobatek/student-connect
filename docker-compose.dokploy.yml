@@ -1,0 +1,103 @@
+# Compose "Raw" untuk Dokploy (turunan dari docker-compose.prod.yml).
+#
+# Cara pakai: Dokploy > Create Service > Compose > Compose Type: Docker Compose > Source: Raw,
+# tempel isi file ini, isi variabel di tab Environment (daftar di .env.example), lalu Deploy.
+#
+# Beda dari docker-compose.prod.yml:
+#  - Tidak ada `ports`/Caddy: TLS dan routing ditangani Traefik Dokploy. Tambahkan Domain di tab
+#    Domains: Service Name `server`, Port 5150, Path `/api`, dan satu domain lagi dengan Path `/files`
+#    (tautan dokumen publik permanen; bucket R2 tetap privat). R2_PUBLIC_BASE_URL = https://<domain-app>/files.
+#  - `server` ikut jaringan eksternal `dokploy-network` agar terjangkau Traefik; db tetap hanya di `internal`.
+#  - Tanpa `container_name` (Dokploy memberi nama sendiri dan memakai nama itu untuk log/monitoring).
+#  - Build memakai konteks Git karena mode Raw tidak meng-clone repo. Repo privat: pakai
+#    https://<token>@github.com/tobatek/student-connect.git, atau build/push image lebih dulu lalu
+#    ganti blok `build` dengan `image: <registry>/student-connect-server:<tag>`.
+#  - SPA (apps/web) tidak termasuk; sajikan lewat service/aplikasi Dokploy terpisah pada origin yang sama.
+#
+# Data Postgres ada di volume bernama TETAP `student_connect_pgdata`; jangan hapus volume ini.
+
+name: student-connect-prod
+
+x-server: &server
+  build:
+    context: https://github.com/tobatek/student-connect.git#main
+    dockerfile: infra/Dockerfile.server
+  image: student-connect-server:latest
+  restart: unless-stopped
+  depends_on:
+    db:
+      condition: service_healthy
+  environment: &server-env
+    LOCO_ENV: production
+    DATABASE_URL: postgres://${POSTGRES_USER:-student_connect}:${POSTGRES_PASSWORD:?isi POSTGRES_PASSWORD di Environment}@db:5432/${POSTGRES_DB:-student_connect}
+    HOST: ${HOST:?isi HOST (URL publik API) di Environment}
+    CORS_ORIGIN: ${CORS_ORIGIN:?isi CORS_ORIGIN di Environment}
+    CREDENTIAL_MASTER_KEY: ${CREDENTIAL_MASTER_KEY:?isi CREDENTIAL_MASTER_KEY di Environment}
+    R2_BUCKET: ${R2_BUCKET:?isi R2_BUCKET di Environment}
+    R2_ENDPOINT: ${R2_ENDPOINT:?isi R2_ENDPOINT di Environment}
+    R2_REGION: ${R2_REGION:-auto}
+    R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?isi R2_ACCESS_KEY_ID di Environment}
+    R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?isi R2_SECRET_ACCESS_KEY di Environment}
+    R2_PUBLIC_BASE_URL: ${R2_PUBLIC_BASE_URL:?isi R2_PUBLIC_BASE_URL di Environment}
+    R2_MAX_UPLOAD_MB: ${R2_MAX_UPLOAD_MB:-5}
+    # Satu instance: boleh migrasi otomatis. Bila >1 instance, set false dan migrasi sebagai langkah rilis.
+    DB_AUTO_MIGRATE: ${DB_AUTO_MIGRATE:-true}
+    SSO_ENABLED: ${SSO_ENABLED:-false}
+    SSO_PORTAL_BASE_URL: ${SSO_PORTAL_BASE_URL:-}
+    SSO_PORTAL_HOST: ${SSO_PORTAL_HOST:-}
+    SSO_CLIENT_ID: ${SSO_CLIENT_ID:-}
+    SSO_APP_TOKEN: ${SSO_APP_TOKEN:-}
+    SSO_REDIRECT_URI: ${SSO_REDIRECT_URI:-}
+    SSO_TENANT_SLUG: ${SSO_TENANT_SLUG:-}
+    SSO_PASSWORD_LOGIN_ENABLED: ${SSO_PASSWORD_LOGIN_ENABLED:-true}
+    SSO_SESSION_CHECK_ENABLED: ${SSO_SESSION_CHECK_ENABLED:-true}
+    MASTER_SYNC_ENABLED: ${MASTER_SYNC_ENABLED:-false}
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-student_connect}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?isi POSTGRES_PASSWORD di Environment}
+      POSTGRES_DB: ${POSTGRES_DB:-student_connect}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Tidak dipublikasikan: hanya server/scheduler di jaringan `internal` yang bisa menjangkau.
+    networks: [internal]
+    stop_grace_period: 60s
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  # API + worker antrean SIMKATMAWA + job sinkron manual. Diekspos Traefik lewat tab Domains (port 5150).
+  server:
+    <<: *server
+    command: ["/app/server", "start", "--server-and-worker"]
+    expose:
+      - "5150"
+    networks: [internal, dokploy-network]
+
+  # Penjadwal: sync:master (02:00), sso:sessions-check, sessions:purge, submissions:recover, audit:verify.
+  scheduler:
+    <<: *server
+    command: ["/app/server", "scheduler"]
+    depends_on:
+      db:
+        condition: service_healthy
+      server:
+        condition: service_started
+    networks: [internal]
+
+networks:
+  internal:
+  dokploy-network:
+    external: true
+
+volumes:
+  pgdata:
+    # Nama tetap, tidak berawalan nama project, dan tidak dihapus oleh `down`.
+    name: student_connect_pgdata

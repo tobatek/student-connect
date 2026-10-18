@@ -5,7 +5,7 @@
 
 use std::{collections::HashMap, time::Duration};
 
-use axum::extract::DefaultBodyLimit;
+use axum::{extract::DefaultBodyLimit, http::header};
 use bytes::Bytes;
 use loco_rs::prelude::*;
 use regex::Regex;
@@ -187,9 +187,12 @@ async fn upload(State(ctx): State<AppContext>, p: Principal, mut multipart: Mult
             Error::InternalServerError
         })?;
 
-    let public_url = format!("{}/{key}", settings.storage.public_base_url.trim_end_matches('/'));
+    // Tautan publik = {base}/{pid}.{ext}: kode acak permanen, tanpa tanda tangan/kedaluwarsa, dan tidak
+    // membuka lokasi bucket. Objek tidak pernah ditimpa sehingga isi tautan tidak berubah.
+    let pid = Uuid::new_v4();
+    let public_url = format!("{}/{pid}.{}", settings.storage.public_base_url.trim_end_matches('/'), kind.extension());
     let inserted = documents::ActiveModel {
-        pid: ActiveValue::set(Uuid::new_v4()),
+        pid: ActiveValue::set(pid),
         tenant_id: ActiveValue::set(p.tenant_id()),
         record_type: ActiveValue::set(record_type.to_string()),
         record_ref: ActiveValue::set(record_ref.to_string()),
@@ -234,6 +237,35 @@ async fn remove(State(ctx): State<AppContext>, p: Principal, Path(id): Path<Uuid
     documents::Entity::delete_by_id(doc.id).exec(&ctx.db).await?;
     audit(&ctx, &p, "document.delete", "document", Some(doc.pid.to_string()), Outcome::Success, json!({})).await?;
     format::empty_json()
+}
+
+/// Tautan publik permanen `/files/{pid}.{ext}`: tanpa login dan tanpa kedaluwarsa. Bucket tetap privat;
+/// byte dibaca dengan kredensial server. Hanya dokumen yang ada di database yang dapat dibuka.
+#[debug_handler]
+async fn serve_public(State(ctx): State<AppContext>, Path(name): Path<String>) -> Result<Response> {
+    let (stem, ext) = name.split_once('.').ok_or(Error::NotFound)?;
+    let pid = Uuid::parse_str(stem).map_err(|_| Error::NotFound)?;
+    let doc = documents::Model::find_by_pid(&ctx.db, pid).await.map_err(|_| Error::NotFound)?;
+    if doc.storage_key.rsplit('.').next() != Some(ext) {
+        return Err(Error::NotFound);
+    }
+    let bytes: Vec<u8> = ctx.storage.download(std::path::Path::new(&doc.storage_key)).await.map_err(|e| {
+        tracing::error!(error = %e, "unduh storage gagal");
+        Error::NotFound
+    })?;
+    axum::response::Response::builder()
+        .header(header::CONTENT_TYPE, doc.mime_type.as_str())
+        .header(header::CONTENT_LENGTH, bytes.len())
+        .header(header::CONTENT_DISPOSITION, format!("inline; filename=\"{}\"", safe_filename(&doc.original_filename)))
+        .header(header::CACHE_CONTROL, "public, max-age=31536000, immutable")
+        .header("X-Content-Type-Options", "nosniff")
+        .header(header::CONTENT_SECURITY_POLICY, "default-src 'none'; sandbox")
+        .body(axum::body::Body::from(bytes))
+        .map_err(|_| Error::InternalServerError)
+}
+
+pub fn public_routes() -> Routes {
+    Routes::new().prefix("/files").add("/{name}", get(serve_public))
 }
 
 pub fn routes() -> Routes {
