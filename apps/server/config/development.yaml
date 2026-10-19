@@ -144,6 +144,7 @@ settings:
     password_login_enabled: <%= get_env(name="SSO_PASSWORD_LOGIN_ENABLED", default="true") %>
     session_check_enabled: <%= get_env(name="SSO_SESSION_CHECK_ENABLED", default="true") %>
     state_ttl_seconds: 600
+    require_state: <%= get_env(name="SSO_REQUIRE_STATE", default="true") %>
     post_login_url: /
     login_error_url: /masuk
     default_student_role: MAHASISWA

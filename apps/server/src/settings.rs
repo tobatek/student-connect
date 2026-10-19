@@ -137,6 +137,10 @@ pub struct SsoSettings {
     /// Task `sso:sessions-check` mencabut sesi lokal bila Portal menyatakan pengguna tidak aktif.
     #[serde(default = "d_true")]
     pub session_check_enabled: bool,
+    /// `true` (aman): callback wajib membawa `state` yang cocok dengan cookie. `false`: untuk Portal yang
+    /// tidak meneruskan `state`; cukup cookie state browser yang sama. Perlindungan login-CSRF melemah.
+    #[serde(default = "d_true")]
+    pub require_state: bool,
 }
 
 impl Default for SsoSettings {
@@ -158,6 +162,7 @@ impl Default for SsoSettings {
             default_student_role: d_student_role(),
             allow_insecure_dev: false,
             session_check_enabled: true,
+            require_state: true,
         }
     }
 }

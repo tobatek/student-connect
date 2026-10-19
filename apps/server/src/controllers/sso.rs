@@ -145,15 +145,23 @@ async fn login(State(ctx): State<AppContext>, meta: ClientMeta) -> Result<Respon
     redirect(target.as_str(), &[state_cookie(&settings, &state, settings.sso.state_ttl_seconds)])
 }
 
-/// Memeriksa `state` terhadap cookie: sama persis (waktu-konstan) dan belum kedaluwarsa.
-fn state_is_valid(supplied: Option<&str>, cookie: Option<&str>, ttl_seconds: i64, now: i64) -> bool {
-    let (Some(supplied), Some(cookie)) = (supplied, cookie) else {
+/// Memeriksa `state` terhadap cookie: cookie harus ada dan belum kedaluwarsa; `state` dari Portal, bila
+/// ada, harus sama persis (waktu-konstan). `require_supplied=false` menerima callback tanpa `state`
+/// (Portal yang tidak meneruskannya) selama cookie browser ini ada, dengan perlindungan login-CSRF lebih lemah.
+fn state_is_valid(supplied: Option<&str>, cookie: Option<&str>, ttl_seconds: i64, now: i64, require_supplied: bool) -> bool {
+    let Some(cookie) = cookie else {
         return false;
     };
-    if supplied.len() != cookie.len() || !bool::from(supplied.as_bytes().ct_eq(cookie.as_bytes())) {
-        return false;
+    match supplied {
+        Some(supplied) => {
+            if supplied.len() != cookie.len() || !bool::from(supplied.as_bytes().ct_eq(cookie.as_bytes())) {
+                return false;
+            }
+        }
+        None if require_supplied => return false,
+        None => {}
     }
-    let issued = supplied.rsplit_once('.').and_then(|(_, ts)| ts.parse::<i64>().ok());
+    let issued = cookie.rsplit_once('.').and_then(|(_, ts)| ts.parse::<i64>().ok());
     issued.is_some_and(|ts| ts <= now && now - ts <= ttl_seconds)
 }
 
@@ -282,7 +290,7 @@ async fn callback(State(ctx): State<AppContext>, meta: ClientMeta, headers: axum
         .get(header::COOKIE)
         .and_then(|v| v.to_str().ok())
         .and_then(|raw| read_cookie(raw, &state_cookie_name(&settings)));
-    if !state_is_valid(q.state.as_deref(), cookie_state.as_deref(), settings.sso.state_ttl_seconds, Utc::now().timestamp()) {
+    if !state_is_valid(q.state.as_deref(), cookie_state.as_deref(), settings.sso.state_ttl_seconds, Utc::now().timestamp(), settings.sso.require_state) {
         audit_anonymous(&ctx, &meta, None, Outcome::Denied, json!({"reason": "bad_state"})).await?;
         return failure(&settings, code::STATE, &[clear_state]);
     }
@@ -399,13 +407,22 @@ mod tests {
     #[test]
     fn state_requires_match_and_freshness() {
         let s = "abc.1000";
-        assert!(state_is_valid(Some(s), Some(s), 600, 1100));
-        assert!(!state_is_valid(Some(s), Some(s), 600, 1700), "kedaluwarsa");
-        assert!(!state_is_valid(Some(s), Some("abd.1000"), 600, 1100), "beda");
-        assert!(!state_is_valid(Some(s), None, 600, 1100), "cookie hilang");
-        assert!(!state_is_valid(None, Some(s), 600, 1100), "state hilang");
-        assert!(!state_is_valid(Some("abc.9999"), Some("abc.9999"), 600, 1100), "waktu di masa depan");
-        assert!(!state_is_valid(Some("abc"), Some("abc"), 600, 1100), "tanpa cap waktu");
+        assert!(state_is_valid(Some(s), Some(s), 600, 1100, true));
+        assert!(!state_is_valid(Some(s), Some(s), 600, 1700, true), "kedaluwarsa");
+        assert!(!state_is_valid(Some(s), Some("abd.1000"), 600, 1100, true), "beda");
+        assert!(!state_is_valid(Some(s), None, 600, 1100, true), "cookie hilang");
+        assert!(!state_is_valid(None, Some(s), 600, 1100, true), "state hilang");
+        assert!(!state_is_valid(Some("abc.9999"), Some("abc.9999"), 600, 1100, true), "waktu di masa depan");
+        assert!(!state_is_valid(Some("abc"), Some("abc"), 600, 1100, true), "tanpa cap waktu");
+    }
+
+    #[test]
+    fn state_optional_mode_still_needs_fresh_cookie() {
+        let s = "abc.1000";
+        assert!(state_is_valid(None, Some(s), 600, 1100, false), "Portal tanpa state");
+        assert!(!state_is_valid(None, Some(s), 600, 1700, false), "cookie kedaluwarsa");
+        assert!(!state_is_valid(None, None, 600, 1100, false), "tanpa cookie");
+        assert!(!state_is_valid(Some("abd.1000"), Some(s), 600, 1100, false), "state ada tapi beda");
     }
 
     #[test]
