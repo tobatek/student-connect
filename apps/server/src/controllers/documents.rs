@@ -277,3 +277,26 @@ pub fn routes() -> Routes {
         .add("/{id}", get(show))
         .add("/{id}", delete(remove))
 }
+
+#[cfg(test)]
+mod tests {
+    use axum::extract::Query;
+
+    use super::*;
+
+    /// Regresi: dengan `#[serde(flatten)]` angka dari query string gagal di-parse dan rute membalas 400.
+    #[test]
+    fn list_params_parse_numeric_query() {
+        let uri: axum::http::Uri = "/x?page=1&page_size=15&record_type=sertifikasi".parse().unwrap();
+        let Query(p) = Query::<ListParams>::try_from_uri(&uri).expect("query valid harus lolos");
+        assert_eq!(PageQuery { page: p.page, page_size: p.page_size }.normalized(), (1, 15));
+        assert_eq!(p.record_type.as_deref(), Some("sertifikasi"));
+    }
+
+    #[test]
+    fn list_params_default_when_empty() {
+        let uri: axum::http::Uri = "/x".parse().unwrap();
+        let Query(p) = Query::<ListParams>::try_from_uri(&uri).unwrap();
+        assert_eq!(PageQuery { page: p.page, page_size: p.page_size }.normalized(), (1, 20));
+    }
+}

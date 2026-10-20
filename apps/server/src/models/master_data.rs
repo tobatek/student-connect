@@ -6,7 +6,7 @@
 
 use chrono::{DateTime, FixedOffset};
 use loco_rs::prelude::*;
-use sea_orm::sea_query::{extension::postgres::PgExpr, Expr, ExprTrait, Func};
+use sea_orm::sea_query::{Expr, Func};
 use sea_orm::{ConnectionTrait, DbBackend, Statement};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -358,6 +358,7 @@ pub async fn active_student_by_email(
     email: &str,
 ) -> std::result::Result<Option<master_students::Model>, DbErr> {
     use master_students::{Column, Entity};
+    use sea_orm::sea_query::ExprTrait;
     Entity::find()
         .filter(Column::TenantId.eq(tenant_id))
         .filter(Column::IsActive.eq(true))
@@ -376,6 +377,7 @@ pub async fn active_employee_by_email(
     email: &str,
 ) -> std::result::Result<Option<master_employees::Model>, DbErr> {
     use master_employees::{Column, Entity};
+    use sea_orm::sea_query::ExprTrait;
     Entity::find()
         .filter(Column::TenantId.eq(tenant_id))
         .filter(Column::IsActive.eq(true))
@@ -401,6 +403,7 @@ pub async fn search_students(
     limit: u64,
 ) -> std::result::Result<Vec<master_students::Model>, DbErr> {
     use master_students::{Column, Entity};
+    use sea_orm::sea_query::extension::postgres::PgExpr;
     let mut query = Entity::find().filter(Column::TenantId.eq(tenant_id)).filter(Column::IsActive.eq(true));
     if !q.trim().is_empty() {
         let pattern = contains_pattern(q);
@@ -424,6 +427,7 @@ pub async fn search_lecturers(
     limit: u64,
 ) -> std::result::Result<Vec<master_employees::Model>, DbErr> {
     use master_employees::{Column, Entity};
+    use sea_orm::sea_query::extension::postgres::PgExpr;
     let mut query = Entity::find()
         .filter(Column::TenantId.eq(tenant_id))
         .filter(Column::IsActive.eq(true))
