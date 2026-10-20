@@ -25,6 +25,15 @@ use crate::{
     settings::Settings,
 };
 
+fn page_fingerprint(rows: &[serde_json::Value]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    for row in rows {
+        row.to_string().hash(&mut hasher);
+    }
+    hasher.finish()
+}
+
 const fn table_for(kind: MasterKind) -> Table {
     match kind {
         MasterKind::Students => Table::Students,
@@ -138,6 +147,7 @@ async fn pull(
     let table = table_for(kind);
     let mut c = Counters::default();
     let mut page = 1u32;
+    let mut previous_page: Option<u64> = None;
 
     let reached_end = loop {
         if page > sync.max_pages {
@@ -153,6 +163,14 @@ async fn pull(
                 return (c, Pulled::Failed(format!("halaman {page}: {msg}")));
             }
         };
+
+        // Portal yang mengabaikan `page` mengembalikan isi yang sama terus-menerus; tanpa ini loop jalan sampai `max_pages`.
+        let fingerprint = page_fingerprint(&batch.rows);
+        if previous_page == Some(fingerprint) {
+            tracing::warn!(kind = kind.label(), page, "halaman identik dengan sebelumnya; paginasi Portal diabaikan, berhenti");
+            break true;
+        }
+        previous_page = Some(fingerprint);
 
         let mut seen: Vec<String> = Vec::with_capacity(batch.rows.len());
         for raw in &batch.rows {
@@ -218,5 +236,27 @@ async fn pull(
                 Err(e) => (c, Pulled::Failed(format!("gagal menonaktifkan data hilang ({e})"))),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::page_fingerprint;
+
+    #[test]
+    fn identical_pages_share_a_fingerprint() {
+        let a = vec![json!({"nim": "1"}), json!({"nim": "2"})];
+        assert_eq!(page_fingerprint(&a), page_fingerprint(&a.clone()));
+    }
+
+    #[test]
+    fn different_pages_or_order_differ() {
+        let a = vec![json!({"nim": "1"}), json!({"nim": "2"})];
+        let b = vec![json!({"nim": "3"}), json!({"nim": "4"})];
+        let reversed = vec![json!({"nim": "2"}), json!({"nim": "1"})];
+        assert_ne!(page_fingerprint(&a), page_fingerprint(&b));
+        assert_ne!(page_fingerprint(&a), page_fingerprint(&reversed));
     }
 }
