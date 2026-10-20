@@ -91,8 +91,9 @@ async fn enforce_people(ctx: &AppContext, p: &Principal, v: &mut records::Valida
 
 #[derive(Debug, Deserialize)]
 struct ListParams {
-    #[serde(flatten)]
-    page: PageQuery,
+    // Tanpa `#[serde(flatten)]`: dengan flatten, angka dari query string gagal di-parse.
+    page: Option<u64>,
+    page_size: Option<u64>,
     status: Option<String>,
     q: Option<String>,
 }
@@ -107,7 +108,7 @@ struct RevisionParams {
 async fn list(State(ctx): State<AppContext>, p: Principal, Path(slug): Path<String>, Query(params): Query<ListParams>) -> Result<Response> {
     p.require(Perm::RecordRead)?;
     let kind = kind_from_slug(&slug)?;
-    let (page, size) = params.page.normalized();
+    let (page, size) = PageQuery { page: params.page, page_size: params.page_size }.normalized();
     let status_filter = params.status.as_deref().filter(|s| {
         [status::DRAFT, status::SUBMITTED_INTERNAL, status::NEED_REVISION, status::VERIFIED, status::QUEUED, status::SENDING, status::SENT, status::FAILED, status::CANCELLED].contains(s)
     });

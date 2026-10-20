@@ -32,8 +32,9 @@ const HARD_BODY_LIMIT: usize = 7 * 1024 * 1024;
 
 #[derive(Debug, Deserialize)]
 struct ListParams {
-    #[serde(flatten)]
-    page: PageQuery,
+    // Tanpa `#[serde(flatten)]`: dengan flatten, angka dari query string gagal di-parse.
+    page: Option<u64>,
+    page_size: Option<u64>,
     record_type: Option<String>,
     record_ref: Option<String>,
 }
@@ -58,7 +59,7 @@ fn hex(bytes: &[u8]) -> String {
 #[debug_handler]
 async fn list(State(ctx): State<AppContext>, p: Principal, Query(q): Query<ListParams>) -> Result<Response> {
     p.require(Perm::RecordRead)?;
-    let (page, size) = q.page.normalized();
+    let (page, size) = PageQuery { page: q.page, page_size: q.page_size }.normalized();
     let uploader = p.role.sees_only_own().then_some(p.user.id);
     let (rows, total) = documents::Model::list(&ctx.db, p.tenant_id(), q.record_type.as_deref(), q.record_ref.as_deref(), uploader, page, size)
         .await
