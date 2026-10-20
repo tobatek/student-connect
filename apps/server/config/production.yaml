@@ -66,6 +66,12 @@ queue:
   kind: Postgres
   uri: <%= get_env(name="DATABASE_URL") %>
   dangerously_flush: false
+  # Bawaan Loco: acquire 500 ms dan koneksi ditutup setelah idle 500 ms, padahal worker polling tiap detik.
+  # Akibatnya koneksi dibuat ulang terus dan sering "pool timed out" bila DB sedikit lambat.
+  min_connections: 2
+  max_connections: 10
+  connect_timeout: 5000
+  idle_timeout: 60000
 
 scheduler:
   output: stdout
@@ -95,8 +101,8 @@ scheduler:
 database:
   uri: <%= get_env(name="DATABASE_URL") %>
   enable_logging: false
-  connect_timeout: <%= get_env(name="DB_CONNECT_TIMEOUT", default="3000") %>
-  idle_timeout: <%= get_env(name="DB_IDLE_TIMEOUT", default="500") %>
+  connect_timeout: <%= get_env(name="DB_CONNECT_TIMEOUT", default="5000") %>
+  idle_timeout: <%= get_env(name="DB_IDLE_TIMEOUT", default="60000") %>
   min_connections: <%= get_env(name="DB_MIN_CONNECTIONS", default="2") %>
   max_connections: <%= get_env(name="DB_MAX_CONNECTIONS", default="10") %>
   # Matikan bila menjalankan >1 instance; migrasikan sebagai langkah rilis terpisah.
