@@ -112,9 +112,9 @@ impl Client {
     /// Pesan galat bila URL ditolak allowlist atau klien HTTP gagal dibuat.
     pub fn new(settings: &SsoSettings) -> Result<Self, String> {
         let base = if settings.allow_insecure_dev {
-            Url::parse(settings.portal_base_url.trim()).map_err(|_| "URL Portal tidak valid".to_string())?
+            Url::parse(settings.api_url().trim()).map_err(|_| "URL Portal tidak valid".to_string())?
         } else {
-            crate::security::url_guard::outbound_api(&settings.portal_base_url, &settings.allowed_hosts)
+            crate::security::url_guard::outbound_api(settings.api_url(), &settings.allowed_hosts)
                 .map_err(ToString::to_string)?
         };
         let http = reqwest::Client::builder()

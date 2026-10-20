@@ -100,6 +100,10 @@ pub struct SsoSettings {
     /// Contoh: `https://portal.kampus.ac.id`.
     #[serde(default)]
     pub portal_base_url: String,
+    /// Basis URL API Portal bila beda host dari halaman login (mis. `https://api-portal.kampus.ac.id`).
+    /// Kosong = pakai `portal_base_url`. Hostnya juga harus ada di `allowed_hosts`.
+    #[serde(default)]
+    pub api_base_url: String,
     /// Host Portal yang boleh dihubungi backend (anti-SSRF).
     #[serde(default)]
     pub allowed_hosts: Vec<String>,
@@ -148,6 +152,7 @@ impl Default for SsoSettings {
         Self {
             enabled: false,
             portal_base_url: String::new(),
+            api_base_url: String::new(),
             allowed_hosts: Vec::new(),
             client_id: String::new(),
             app_token: String::new(),
@@ -172,6 +177,7 @@ impl std::fmt::Debug for SsoSettings {
         f.debug_struct("SsoSettings")
             .field("enabled", &self.enabled)
             .field("portal_base_url", &self.portal_base_url)
+            .field("api_base_url", &self.api_base_url)
             .field("client_id", &self.client_id)
             .field("app_token", &"<redacted>")
             .field("redirect_uri", &self.redirect_uri)
@@ -381,6 +387,12 @@ impl Settings {
 }
 
 impl SsoSettings {
+    /// URL dasar untuk panggilan server-ke-server ke Portal.
+    #[must_use]
+    pub fn api_url(&self) -> &str {
+        if self.api_base_url.trim().is_empty() { &self.portal_base_url } else { &self.api_base_url }
+    }
+
     fn validate(&self, environment: &str) -> Result<()> {
         use crate::security::roles::Role;
 
@@ -414,8 +426,8 @@ impl SsoSettings {
             return Err(Error::Message("sso.allowed_hosts wajib berisi host Portal".into()));
         }
         if !self.allow_insecure_dev {
-            crate::security::url_guard::outbound_api(&self.portal_base_url, &self.allowed_hosts)
-                .map_err(|m| Error::Message(format!("sso.portal_base_url: {m}")))?;
+            crate::security::url_guard::outbound_api(self.api_url(), &self.allowed_hosts)
+                .map_err(|m| Error::Message(format!("sso.portal_base_url/api_base_url: {m}")))?;
         }
         let redirect = url::Url::parse(&self.redirect_uri)
             .map_err(|_| Error::Message("sso.redirect_uri tidak valid".into()))?;

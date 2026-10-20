@@ -134,8 +134,10 @@ settings:
   sso:
     enabled: <%= get_env(name="SSO_ENABLED", default="false") %>
     portal_base_url: "<%= get_env(name="SSO_PORTAL_BASE_URL", default="") %>"
+    api_base_url: "<%= get_env(name="SSO_PORTAL_API_URL", default="") %>"
     allowed_hosts:
       - "<%= get_env(name="SSO_PORTAL_HOST", default="") %>"
+      - "<%= get_env(name="SSO_PORTAL_API_HOST", default="") %>"
     client_id: "<%= get_env(name="SSO_CLIENT_ID", default="") %>"
     app_token: "<%= get_env(name="SSO_APP_TOKEN", default="") %>"
     redirect_uri: "<%= get_env(name="SSO_REDIRECT_URI", default="") %>"
