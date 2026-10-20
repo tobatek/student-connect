@@ -91,7 +91,13 @@ async fn login(State(ctx): State<AppContext>, meta: ClientMeta, Json(params): Js
     }
 
     let attempted: String = email.chars().take(120).collect();
-    let Ok(user) = users::Model::find_by_email(&ctx.db, &email).await else {
+    let found = users::Model::find_by_email(&ctx.db, &email).await;
+    if let Err(err) = &found {
+        if !matches!(err, ModelError::EntityNotFound) {
+            tracing::error!(error = %err, "pencarian akun saat login gagal");
+        }
+    }
+    let Ok(user) = found else {
         users::Model::burn_password_check(&params.password);
         anonymous_audit(&ctx, &meta, Outcome::Failure, json!({"reason": "unknown_email", "email": attempted})).await?;
         return unauthorized(GENERIC_FAILURE);
