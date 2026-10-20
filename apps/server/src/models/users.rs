@@ -2,6 +2,7 @@ use std::sync::OnceLock;
 
 use chrono::{Duration, Utc};
 use loco_rs::{hash, prelude::*};
+use sea_orm::sea_query::{Expr, ExprTrait, Func};
 use validator::ValidateEmail;
 
 pub use super::_entities::users::{self, ActiveModel, Column, Entity, Model};
@@ -66,9 +67,7 @@ impl Model {
     pub async fn find_by_email(db: &DatabaseConnection, email: &str) -> ModelResult<Self> {
         let email = email.trim().to_lowercase();
         Entity::find()
-            .filter(
-                sea_orm::sea_query::Expr::cust_with_values("lower(email) = ?", [email]),
-            )
+            .filter(Expr::expr(Func::lower(Expr::col(Column::Email))).eq(email))
             .one(db)
             .await?
             .ok_or(ModelError::EntityNotFound)

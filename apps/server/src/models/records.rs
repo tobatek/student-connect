@@ -6,7 +6,7 @@
 
 use chrono::{NaiveDate, Utc};
 use loco_rs::prelude::*;
-use sea_orm::sea_query::{Expr, ExprTrait};
+use sea_orm::sea_query::{extension::postgres::PgExpr, Expr, ExprTrait};
 use sea_orm::{QuerySelect, Select, TransactionTrait};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -357,8 +357,8 @@ impl Model {
             let pattern = format!("%{}%", escape_like(&term.chars().take(100).collect::<String>()));
             select = select.filter(
                 Condition::any()
-                    .add(Expr::cust_with_values("nama ILIKE ?", [pattern.clone()]))
-                    .add(Expr::cust_with_values("penyelenggara ILIKE ?", [pattern])),
+                    .add(Expr::col(Column::Nama).ilike(pattern.clone()))
+                    .add(Expr::col(Column::Penyelenggara).ilike(pattern)),
             );
         }
         let paginator = select

@@ -6,6 +6,7 @@
 
 use chrono::{DateTime, FixedOffset};
 use loco_rs::prelude::*;
+use sea_orm::sea_query::{extension::postgres::PgExpr, Expr, ExprTrait, Func};
 use sea_orm::{ConnectionTrait, DbBackend, Statement};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -360,7 +361,7 @@ pub async fn active_student_by_email(
     Entity::find()
         .filter(Column::TenantId.eq(tenant_id))
         .filter(Column::IsActive.eq(true))
-        .filter(sea_orm::sea_query::Expr::cust_with_values("lower(email) = ?", [email.trim().to_lowercase()]))
+        .filter(Expr::expr(Func::lower(Expr::col(Column::Email))).eq(email.trim().to_lowercase()))
         .one(db)
         .await
 }
@@ -378,7 +379,7 @@ pub async fn active_employee_by_email(
     Entity::find()
         .filter(Column::TenantId.eq(tenant_id))
         .filter(Column::IsActive.eq(true))
-        .filter(sea_orm::sea_query::Expr::cust_with_values("lower(email) = ?", [email.trim().to_lowercase()]))
+        .filter(Expr::expr(Func::lower(Expr::col(Column::Email))).eq(email.trim().to_lowercase()))
         .one(db)
         .await
 }
@@ -405,8 +406,8 @@ pub async fn search_students(
         let pattern = contains_pattern(q);
         query = query.filter(
             Condition::any()
-                .add(sea_orm::sea_query::Expr::cust_with_values("nim ILIKE ?", [pattern.clone()]))
-                .add(sea_orm::sea_query::Expr::cust_with_values("full_name ILIKE ?", [pattern])),
+                .add(Expr::col(Column::Nim).ilike(pattern.clone()))
+                .add(Expr::col(Column::FullName).ilike(pattern)),
         );
     }
     query.order_by_asc(Column::FullName).limit(limit).all(db).await
@@ -431,8 +432,8 @@ pub async fn search_lecturers(
         let pattern = contains_pattern(q);
         query = query.filter(
             Condition::any()
-                .add(sea_orm::sea_query::Expr::cust_with_values("nuptk ILIKE ?", [pattern.clone()]))
-                .add(sea_orm::sea_query::Expr::cust_with_values("full_name ILIKE ?", [pattern])),
+                .add(Expr::col(Column::Nuptk).ilike(pattern.clone()))
+                .add(Expr::col(Column::FullName).ilike(pattern)),
         );
     }
     query.order_by_asc(Column::FullName).limit(limit).all(db).await
