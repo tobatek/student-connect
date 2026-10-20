@@ -158,9 +158,11 @@ browser user) dan dienkripsi dengan pola amplop yang sama.
   ditampilkan sekali saat generate/regenerate, simpan di secret manager App Luar, jangan di
   repo/commit.
 - Body request & response: amplop AES-256-GCM `{ nonce, ciphertext, tag }`, semua base64.
-  - Kunci AES = `HKDF-Expand(sha256(app_token), 32 bytes, info="sso-verify-v1")`: App Luar
-    men-derive kunci dari token mentahnya sendiri (bukan dari hash yang dikirim Portal, App Luar
-    tidak pernah menerima hash itu, App Luar cuma tahu token mentahnya sendiri).
+  - Kunci AES = HKDF penuh (Extract + Expand, salt kosong) dengan IKM = `sha256(app_token)` dalam
+    hex huruf kecil (64 karakter), 32 byte, `info="sso-verify-v1"`; di Portal
+    `hash_hkdf('sha256', $tokenHash, 32, 'sso-verify-v1')`. App Luar men-derive kunci dari token
+    mentahnya sendiri (bukan dari hash yang dikirim Portal, App Luar tidak pernah menerima hash itu,
+    App Luar cuma tahu token mentahnya sendiri).
   - Auth tag GCM berfungsi ganda sebagai signature: tag tidak cocok → payload dianggap dipalsukan
     atau salah kunci, endpoint balas `401`.
   - Lihat implementasi referensi di `apps/api/app/Services/SsoCryptoService.php` (PHP) untuk

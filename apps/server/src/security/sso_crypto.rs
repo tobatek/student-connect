@@ -1,8 +1,9 @@
 //! Amplop AES-256-GCM untuk `/api/sso/verify` dan `/api/sso/session-status` Portal
 //! (kontrak: `docs/15_SSO_PORTAL_VALIDASI_SEPARATION_PLAN.md`, "Autentikasi & enkripsi").
 //!
-//! * Kunci = `HKDF-Expand(PRK = sha256(app_token), L = 32, info = "sso-verify-v1")`.
-//!   Tidak ada tahap Extract dan tidak ada salt: PRK adalah hash token itu sendiri.
+//! * Kunci = HKDF penuh (Extract + Expand, salt kosong) dengan `IKM = hex-huruf-kecil(sha256(app_token))`
+//!   (64 karakter), `L = 32`, `info = "sso-verify-v1"`. Sama dengan Portal:
+//!   `hash_hkdf('sha256', $tokenHash, 32, 'sso-verify-v1')`.
 //! * Amplop `{nonce, ciphertext, tag}`, semuanya base64 standar. Nonce 12 byte, tag 16 byte,
 //!   tanpa AAD. Tag yang tidak cocok berarti payload palsu atau kunci salah.
 
@@ -52,9 +53,9 @@ pub struct EnvelopeKey {
 impl EnvelopeKey {
     #[must_use]
     pub fn from_app_token(app_token: &str) -> Self {
-        let prk = Sha256::digest(app_token.as_bytes());
-        // `from_prk` hanya gagal bila PRK lebih pendek dari hash; SHA-256 selalu 32 byte.
-        let hk = Hkdf::<Sha256>::from_prk(&prk).expect("PRK 32 byte");
+        // IKM adalah string hex 64 karakter (bukan 32 byte mentah), mengikuti `hash('sha256', ...)` di PHP.
+        let token_hash: String = Sha256::digest(app_token.as_bytes()).iter().map(|b| format!("{b:02x}")).collect();
+        let hk = Hkdf::<Sha256>::new(None, token_hash.as_bytes());
         let mut okm = [0u8; 32];
         hk.expand(HKDF_INFO, &mut okm).expect("32 byte <= 255 * hash len");
         Self { cipher: Aes256Gcm::new_from_slice(&okm).expect("kunci 32 byte") }
@@ -150,14 +151,15 @@ mod tests {
         assert_eq!(key.open(&Envelope { tag: STANDARD.encode([0u8; 4]), ..env }), Err(CryptoError::Malformed));
     }
 
-    /// Vektor dari implementasi independen (`scripts/sso-envelope.mjs`, HMAC manual untuk
-    /// HKDF-Expand), nonce tetap. Memastikan pustaka `hkdf` menghasilkan kunci yang sama dengan rumus kontrak.
+    /// Vektor tetap dari implementasi PHP Portal (`hash_hkdf('sha256', hash('sha256', $token), 32,
+    /// 'sso-verify-v1')` + `openssl_encrypt('aes-256-gcm')`), nonce 12 x 0x07. Tes lain memakai fungsi yang
+    /// sama di kedua sisi, jadi hanya vektor ini yang menangkap penyimpangan dari Portal.
     #[test]
-    fn opens_envelope_sealed_by_independent_node_implementation() {
+    fn opens_envelope_sealed_by_portal_php_implementation() {
         let env = Envelope {
             nonce: "BwcHBwcHBwcHBwcH".to_string(),
-            ciphertext: "+q9wUp+oH2p02bRg9yw=".to_string(),
-            tag: "/D0PGIUzB2STE1M7Jw243w==".to_string(),
+            ciphertext: "DfKdrlZplOmqGaLh5jg=".to_string(),
+            tag: "AScjDbh49csqF4pO19huSQ==".to_string(),
         };
         let plain = EnvelopeKey::from_app_token(TOKEN).open(&env).unwrap();
         assert_eq!(plain, br#"{"code":"abc"}"#);

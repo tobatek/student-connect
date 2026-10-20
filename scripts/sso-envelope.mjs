@@ -1,23 +1,22 @@
 #!/usr/bin/env node
 // Alat uji amplop AES-256-GCM Portal SSO tanpa dependensi (Node >= 18).
 // Implementasi independen dari kode Rust, mengikuti kontrak docs/15_SSO_PORTAL_VALIDASI_SEPARATION_PLAN.md:
-//   kunci = HKDF-Expand(PRK = sha256(app_token), L = 32, info = "sso-verify-v1")
+//   kunci = HKDF penuh (salt kosong), IKM = hex sha256(app_token), L = 32, info = "sso-verify-v1"
 //   amplop = { nonce, ciphertext, tag } (base64), nonce 12 byte, tag 16 byte, tanpa AAD.
 //
 // Pemakaian (token dibaca dari variabel lingkungan agar tidak tersimpan di riwayat shell):
 //   SSO_APP_TOKEN=... node scripts/sso-envelope.mjs seal '{"code":"KODE"}'
 //   SSO_APP_TOKEN=... node scripts/sso-envelope.mjs open '{"nonce":"..","ciphertext":"..","tag":".."}'
 //   SSO_APP_TOKEN=... node scripts/sso-envelope.mjs key        # kunci turunan (hex) untuk uji silang
-import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes } from 'node:crypto';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const INFO = Buffer.from('sso-verify-v1');
 
 export function deriveKey(appToken) {
-  const prk = createHash('sha256').update(appToken).digest();
-  // HKDF-Expand untuk 32 byte = satu blok: T(1) = HMAC(PRK, info || 0x01).
-  return createHmac('sha256', prk).update(Buffer.concat([INFO, Buffer.from([1])])).digest();
+  const tokenHash = createHash('sha256').update(appToken).digest('hex');
+  return Buffer.from(hkdfSync('sha256', tokenHash, Buffer.alloc(0), INFO, 32));
 }
 
 export function seal(key, plaintext, nonce = randomBytes(12)) {
