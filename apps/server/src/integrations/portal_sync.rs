@@ -25,6 +25,15 @@ use crate::{
     settings::Settings,
 };
 
+/// Progres ditulis tiap sekian baris agar bar di Pengaturan bergerak tanpa membebani database.
+const PROGRESS_EVERY: i32 = 50;
+
+async fn write_progress(ctx: &AppContext, run_id: i64, c: Counters, total: Option<i32>) {
+    if let Err(e) = sync_runs::Model::record_progress(&ctx.db, run_id, c, total).await {
+        tracing::warn!(error = %e, "gagal menulis progres sinkronisasi");
+    }
+}
+
 fn page_fingerprint(rows: &[serde_json::Value]) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -87,7 +96,7 @@ pub async fn run(ctx: &AppContext, kind: MasterKind, trigger: Trigger, increment
         })?;
     let started: DateTime<FixedOffset> = run.started_at;
 
-    let (counters, outcome) = pull(ctx, &client, &settings, kind, tenant.id, started, updated_since.as_deref(), incremental).await;
+    let (counters, outcome) = pull(ctx, &client, &settings, kind, tenant.id, run.id, started, updated_since.as_deref(), incremental).await;
     let (status, note) = match &outcome {
         Pulled::Complete => (if counters.failed == 0 { Status::Success } else { Status::Partial }, None),
         Pulled::Incomplete(msg) => (Status::Partial, Some(msg.clone())),
@@ -139,6 +148,7 @@ async fn pull(
     settings: &Settings,
     kind: MasterKind,
     tenant_id: i64,
+    run_id: i64,
     started: DateTime<FixedOffset>,
     updated_since: Option<&str>,
     incremental: bool,
@@ -148,6 +158,7 @@ async fn pull(
     let mut c = Counters::default();
     let mut page = 1u32;
     let mut previous_page: Option<u64> = None;
+    let mut total_estimate: Option<i32> = None;
 
     let reached_end = loop {
         if page > sync.max_pages {
@@ -172,6 +183,13 @@ async fn pull(
         }
         previous_page = Some(fingerprint);
 
+        // Total untuk bar progres: dari Portal bila disebut; bila respons tanpa petunjuk paginasi, isi halaman pertama.
+        if let Some(total) = batch.total {
+            total_estimate = i32::try_from(total).ok();
+        } else if total_estimate.is_none() && !batch.has_pagination_hints {
+            total_estimate = i32::try_from(batch.rows.len()).ok();
+        }
+
         let mut seen: Vec<String> = Vec::with_capacity(batch.rows.len());
         for raw in &batch.rows {
             c.fetched += 1;
@@ -194,7 +212,11 @@ async fn pull(
                 }
             }
             seen.push(row.key);
+            if c.fetched % PROGRESS_EVERY == 0 {
+                write_progress(ctx, run_id, c, total_estimate).await;
+            }
         }
+        write_progress(ctx, run_id, c, total_estimate).await;
         if let Err(e) = table.touch_seen(&ctx.db, tenant_id, &seen, started).await {
             return (c, Pulled::Failed(format!("halaman {page}: gagal menandai data terlihat ({e})")));
         }

@@ -74,6 +74,10 @@ pub struct MasterPage {
     pub rows: Vec<Value>,
     /// `true` bila Portal menyatakan masih ada halaman berikutnya.
     pub has_more: bool,
+    /// Total baris seluruh halaman, bila Portal menyebutkannya (`meta.total` / `total`).
+    pub total: Option<u64>,
+    /// `false` bila respons tanpa petunjuk paginasi sama sekali (Portal bisa saja mengirim semua data sekaligus).
+    pub has_pagination_hints: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -305,6 +309,8 @@ fn parse_master_page(body: &[u8], page: u32) -> Result<MasterPage, PortalError> 
             .or_else(|| v.pointer("/links/next"))
             .or_else(|| v.pointer("/meta/next_page_url"))
     });
+    let total = root.and_then(|v| v.pointer("/meta/total").or_else(|| v.get("total")).and_then(Value::as_u64));
+    let has_pagination_hints = last_page.is_some() || next_url.is_some() || total.is_some();
     let has_more = if let Some(last) = last_page {
         u64::from(page) < last
     } else if let Some(next) = next_url {
@@ -312,7 +318,7 @@ fn parse_master_page(body: &[u8], page: u32) -> Result<MasterPage, PortalError> 
     } else {
         !rows.is_empty()
     };
-    Ok(MasterPage { rows, has_more })
+    Ok(MasterPage { rows, has_more, total, has_pagination_hints })
 }
 
 #[cfg(test)]
@@ -336,6 +342,17 @@ mod tests {
         assert!(!parse_master_page(end, 1).unwrap().has_more);
         assert!(parse_master_page(br#"[{"a":1}]"#, 1).unwrap().has_more);
         assert!(!parse_master_page(br"[]", 2).unwrap().has_more);
+    }
+
+    #[test]
+    fn reads_total_and_pagination_hints() {
+        let with_total = br#"{"data":[{"a":1}],"meta":{"total":1311,"last_page":7}}"#;
+        let p = parse_master_page(with_total, 1).unwrap();
+        assert_eq!(p.total, Some(1311));
+        assert!(p.has_pagination_hints);
+        let bare = parse_master_page(br#"[{"a":1}]"#, 1).unwrap();
+        assert_eq!(bare.total, None);
+        assert!(!bare.has_pagination_hints);
     }
 
     #[test]

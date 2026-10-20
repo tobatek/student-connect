@@ -12,12 +12,12 @@ use crate::{
     errors::{conflict, too_many_requests, unprocessable},
     models::{
         audit_logs::Outcome,
-        master_data::{master_employees, master_students},
+        master_data::{self, master_employees, master_students, ActiveFilter},
         sync_runs,
     },
     security::{principal::Principal, rate_limit, roles::Perm},
     settings::Settings,
-    views::SyncRunView,
+    views::{MasterEmployeeView, MasterStudentView, Page, PageQuery, SyncRunView},
     workers::master_sync::{MasterSyncWorker, MasterSyncWorkerArgs},
 };
 
@@ -28,6 +28,46 @@ struct RunParams {
     kind: String,
     /// `full` (default) atau `incremental`.
     mode: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ListParams {
+    // Tanpa `#[serde(flatten)]`: dengan flatten, angka dari query string gagal di-parse.
+    page: Option<u64>,
+    page_size: Option<u64>,
+    q: Option<String>,
+    /// `active`, `inactive`, atau kosong untuk semua.
+    status: Option<String>,
+}
+
+fn clean_search(q: Option<String>) -> Result<String> {
+    let q = q.unwrap_or_default().trim().to_string();
+    if q.chars().count() > 60 || q.chars().any(char::is_control) {
+        return unprocessable("Kata kunci maksimal 60 karakter.");
+    }
+    Ok(q)
+}
+
+/// `GET /api/master-sync/students`: cache mahasiswa dari Portal (admin).
+#[debug_handler]
+async fn students(State(ctx): State<AppContext>, p: Principal, Query(params): Query<ListParams>) -> Result<Response> {
+    p.require(Perm::SettingsManage)?;
+    let (page, size) = PageQuery { page: params.page, page_size: params.page_size }.normalized();
+    let q = clean_search(params.q)?;
+    let filter = ActiveFilter::parse(params.status.as_deref());
+    let (rows, total) = master_data::list_students(&ctx.db, p.tenant_id(), &q, filter, page, size).await?;
+    format::render().header("cache-control", "no-store").json(Page::new(rows.iter().map(MasterStudentView::from).collect(), page, size, total))
+}
+
+/// `GET /api/master-sync/employees`: cache pegawai/dosen dari Portal (admin).
+#[debug_handler]
+async fn employees(State(ctx): State<AppContext>, p: Principal, Query(params): Query<ListParams>) -> Result<Response> {
+    p.require(Perm::SettingsManage)?;
+    let (page, size) = PageQuery { page: params.page, page_size: params.page_size }.normalized();
+    let q = clean_search(params.q)?;
+    let filter = ActiveFilter::parse(params.status.as_deref());
+    let (rows, total) = master_data::list_employees(&ctx.db, p.tenant_id(), &q, filter, page, size).await?;
+    format::render().header("cache-control", "no-store").json(Page::new(rows.iter().map(MasterEmployeeView::from).collect(), page, size, total))
 }
 
 #[debug_handler]
@@ -102,4 +142,6 @@ pub fn routes() -> Routes {
         .prefix("/api/master-sync")
         .add("/", get(show))
         .add("/run", post(run))
+        .add("/students", get(students))
+        .add("/employees", get(employees))
 }

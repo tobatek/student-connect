@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::{
     models::{
-        _entities::{audit_logs, documents, kejuaraan, records, submission_logs, sync_runs, tenants, users},
+        _entities::{audit_logs, documents, kejuaraan, master_employees, master_students, records, submission_logs, sync_runs, tenants, users},
         enum_mappings, institusi_reports, simkatmawa_credentials,
     },
     security::roles::{Perm, Role},
@@ -441,6 +441,8 @@ pub struct SyncRunView {
     pub unchanged: i32,
     pub deactivated: i32,
     pub failed: i32,
+    /// Total baris yang diharapkan (untuk bar progres); `None` bila Portal tidak menyebutkannya.
+    pub progress_total: Option<i32>,
     pub note: Option<String>,
     pub started_at: Ts,
     pub finished_at: Option<Ts>,
@@ -459,9 +461,64 @@ impl From<&sync_runs::Model> for SyncRunView {
             unchanged: r.unchanged,
             deactivated: r.deactivated,
             failed: r.failed,
+            progress_total: r.progress_total,
             note: r.note.clone(),
             started_at: r.started_at,
             finished_at: r.finished_at,
+        }
+    }
+}
+
+/// Baris cache mahasiswa dari Portal untuk halaman Pengaturan (admin).
+#[derive(Debug, Serialize)]
+pub struct MasterStudentView {
+    pub nim: String,
+    pub nama: String,
+    pub email: Option<String>,
+    pub prodi: Option<String>,
+    pub angkatan: Option<i32>,
+    pub is_active: bool,
+    pub last_seen_at: Ts,
+}
+
+impl From<&master_students::Model> for MasterStudentView {
+    fn from(s: &master_students::Model) -> Self {
+        Self {
+            nim: s.nim.clone(),
+            nama: s.full_name.clone(),
+            email: s.email.clone(),
+            prodi: s.study_program.clone(),
+            angkatan: s.cohort_year,
+            is_active: s.is_active,
+            last_seen_at: s.last_seen_at,
+        }
+    }
+}
+
+/// Baris cache pegawai/dosen dari Portal untuk halaman Pengaturan (admin).
+#[derive(Debug, Serialize)]
+pub struct MasterEmployeeView {
+    pub nip: String,
+    pub nuptk: Option<String>,
+    pub nama: String,
+    pub email: Option<String>,
+    pub unit: Option<String>,
+    pub jabatan: Option<String>,
+    pub is_active: bool,
+    pub last_seen_at: Ts,
+}
+
+impl From<&master_employees::Model> for MasterEmployeeView {
+    fn from(e: &master_employees::Model) -> Self {
+        Self {
+            nip: e.nip.clone(),
+            nuptk: e.nuptk.clone(),
+            nama: e.full_name.clone(),
+            email: e.email.clone(),
+            unit: e.work_unit.clone(),
+            jabatan: e.position.clone(),
+            is_active: e.is_active,
+            last_seen_at: e.last_seen_at,
         }
     }
 }

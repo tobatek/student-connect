@@ -1,15 +1,16 @@
-import { Building2, KeyRound, PlugZap, ShieldCheck, Table2, Users } from 'lucide-react';
+import { Building2, DatabaseZap, KeyRound, PlugZap, ShieldCheck, Table2, Users } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthContext';
 import { Card, PageHeader } from '@/components/ui/Card';
 import { Tabs, type TabItem } from '@/components/ui/Tabs';
 import { Link } from 'react-router-dom';
 import { MappingPanel } from './MappingPanel';
+import { MasterDataPanel } from './MasterDataPanel';
 import { ProfilePanel } from './ProfilePanel';
 import { SimkatmawaPanel } from './SimkatmawaPanel';
 import { UsersPanel } from './UsersPanel';
 
-type Tab = 'profil' | 'simkatmawa' | 'pemetaan' | 'pengguna' | 'keamanan';
+type Tab = 'profil' | 'simkatmawa' | 'pemetaan' | 'pengguna' | 'data-master' | 'keamanan';
 
 export default function SettingsPage() {
   const { can } = useAuth();
@@ -20,6 +21,7 @@ export default function SettingsPage() {
     { id: 'simkatmawa', label: 'SIMKATMAWA', icon: <PlugZap className="size-4" aria-hidden /> },
     ...(can('record.read') ? [{ id: 'pemetaan' as const, label: 'Pemetaan kode', icon: <Table2 className="size-4" aria-hidden /> }] : []),
     ...(can('user.manage') ? [{ id: 'pengguna' as const, label: 'Pengguna', icon: <Users className="size-4" aria-hidden /> }] : []),
+    ...(can('settings.manage') ? [{ id: 'data-master' as const, label: 'Data Portal', icon: <DatabaseZap className="size-4" aria-hidden /> }] : []),
     { id: 'keamanan', label: 'Keamanan akun', icon: <ShieldCheck className="size-4" aria-hidden /> },
   ];
   const requested = params.get('tab') as Tab | null;
@@ -27,7 +29,7 @@ export default function SettingsPage() {
 
   return (
     <>
-      <PageHeader title="Pengaturan" description="Profil perguruan tinggi, koneksi SIMKATMAWA, pemetaan kode, dan akses pengguna." />
+      <PageHeader title="Pengaturan" description="Profil perguruan tinggi, koneksi SIMKATMAWA, pemetaan kode, akses pengguna, dan data mahasiswa/dosen dari Portal." />
       <div className="mb-5">
         <Tabs label="Bagian pengaturan" items={tabs} value={active} onChange={(id) => setParams({ tab: id }, { replace: true })} />
       </div>
@@ -36,6 +38,7 @@ export default function SettingsPage() {
         {active === 'simkatmawa' && <SimkatmawaPanel />}
         {active === 'pemetaan' && <MappingPanel />}
         {active === 'pengguna' && <UsersPanel />}
+        {active === 'data-master' && <MasterDataPanel />}
         {active === 'keamanan' && (
           <Card className="space-y-4 p-6">
             <h2 className="text-base font-bold text-slate-900">Keamanan akun</h2>

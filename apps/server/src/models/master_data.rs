@@ -471,6 +471,96 @@ pub async fn lecturer_by_nuptk(db: &DatabaseConnection, tenant_id: i64, nuptk: &
         .await
 }
 
+/// Filter status aktif untuk daftar master di Pengaturan.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActiveFilter {
+    All,
+    Active,
+    Inactive,
+}
+
+impl ActiveFilter {
+    #[must_use]
+    pub fn parse(value: Option<&str>) -> Self {
+        match value {
+            Some("active") => Self::Active,
+            Some("inactive") => Self::Inactive,
+            _ => Self::All,
+        }
+    }
+}
+
+/// Daftar mahasiswa cache berpaginasi, terurut nama.
+///
+/// # Errors
+/// Galat database.
+pub async fn list_students(
+    db: &DatabaseConnection,
+    tenant_id: i64,
+    q: &str,
+    filter: ActiveFilter,
+    page: u64,
+    page_size: u64,
+) -> std::result::Result<(Vec<master_students::Model>, u64), DbErr> {
+    use sea_orm::sea_query::extension::postgres::PgExpr;
+    use master_students::{Column, Entity};
+    let mut query = Entity::find().filter(Column::TenantId.eq(tenant_id));
+    match filter {
+        ActiveFilter::All => {}
+        ActiveFilter::Active => query = query.filter(Column::IsActive.eq(true)),
+        ActiveFilter::Inactive => query = query.filter(Column::IsActive.eq(false)),
+    }
+    if !q.trim().is_empty() {
+        let pattern = contains_pattern(q);
+        query = query.filter(
+            Condition::any()
+                .add(Expr::col(Column::Nim).ilike(pattern.clone()))
+                .add(Expr::col(Column::FullName).ilike(pattern.clone()))
+                .add(Expr::col(Column::Email).ilike(pattern))
+        );
+    }
+    let paginator = query.order_by_asc(Column::FullName).order_by_asc(Column::Id).paginate(db, page_size);
+    let total = paginator.num_items().await?;
+    let items = paginator.fetch_page(page.saturating_sub(1)).await?;
+    Ok((items, total))
+}
+
+/// Daftar pegawai cache berpaginasi, terurut nama.
+///
+/// # Errors
+/// Galat database.
+pub async fn list_employees(
+    db: &DatabaseConnection,
+    tenant_id: i64,
+    q: &str,
+    filter: ActiveFilter,
+    page: u64,
+    page_size: u64,
+) -> std::result::Result<(Vec<master_employees::Model>, u64), DbErr> {
+    use sea_orm::sea_query::extension::postgres::PgExpr;
+    use master_employees::{Column, Entity};
+    let mut query = Entity::find().filter(Column::TenantId.eq(tenant_id));
+    match filter {
+        ActiveFilter::All => {}
+        ActiveFilter::Active => query = query.filter(Column::IsActive.eq(true)),
+        ActiveFilter::Inactive => query = query.filter(Column::IsActive.eq(false)),
+    }
+    if !q.trim().is_empty() {
+        let pattern = contains_pattern(q);
+        query = query.filter(
+            Condition::any()
+                .add(Expr::col(Column::Nip).ilike(pattern.clone()))
+                .add(Expr::col(Column::Nuptk).ilike(pattern.clone()))
+                .add(Expr::col(Column::FullName).ilike(pattern.clone()))
+                .add(Expr::col(Column::Email).ilike(pattern))
+        );
+    }
+    let paginator = query.order_by_asc(Column::FullName).order_by_asc(Column::Id).paginate(db, page_size);
+    let total = paginator.num_items().await?;
+    let items = paginator.fetch_page(page.saturating_sub(1)).await?;
+    Ok((items, total))
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;

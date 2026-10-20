@@ -291,3 +291,55 @@ export interface DashboardData {
   simkatmawa: CredentialStatus;
   recent: RecordBase[];
 }
+
+export type SyncKind = 'students' | 'employees';
+export type SyncStatus = 'RUNNING' | 'SUCCESS' | 'PARTIAL' | 'FAILED';
+
+/** Satu run sinkronisasi data master dari Portal. */
+export interface SyncRun {
+  id: string;
+  kind: SyncKind;
+  triggered_by: 'schedule' | 'manual' | 'task';
+  status: SyncStatus;
+  fetched: number;
+  created: number;
+  updated: number;
+  unchanged: number;
+  deactivated: number;
+  failed: number;
+  /** Total baris yang diharapkan; null bila Portal tidak menyebutkannya (bar progres tak tentu). */
+  progress_total: number | null;
+  note: string | null;
+  started_at: string;
+  finished_at: string | null;
+}
+
+/** Hasil GET /api/master-sync. */
+export interface MasterSyncStatus {
+  enabled: boolean;
+  counts: Record<SyncKind, { active: number; inactive: number }>;
+  runs: SyncRun[];
+}
+
+/** Baris cache mahasiswa dari Portal (GET /api/master-sync/students). */
+export interface MasterStudent {
+  nim: string;
+  nama: string;
+  email: string | null;
+  prodi: string | null;
+  angkatan: number | null;
+  is_active: boolean;
+  last_seen_at: string;
+}
+
+/** Baris cache pegawai/dosen dari Portal (GET /api/master-sync/employees). */
+export interface MasterEmployee {
+  nip: string;
+  nuptk: string | null;
+  nama: string;
+  email: string | null;
+  unit: string | null;
+  jabatan: string | null;
+  is_active: boolean;
+  last_seen_at: string;
+}

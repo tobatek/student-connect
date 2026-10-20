@@ -124,6 +124,25 @@ impl Model {
             .await?)
     }
 
+    /// Menulis progres sementara agar Pengaturan dapat menampilkan bar. Hanya untuk run yang masih RUNNING.
+    ///
+    /// # Errors
+    /// Galat database.
+    pub async fn record_progress(db: &DatabaseConnection, run_id: i64, c: Counters, total: Option<i32>) -> ModelResult<()> {
+        Entity::update_many()
+            .col_expr(Column::Fetched, sea_orm::sea_query::Expr::value(c.fetched))
+            .col_expr(Column::Created, sea_orm::sea_query::Expr::value(c.created))
+            .col_expr(Column::Updated, sea_orm::sea_query::Expr::value(c.updated))
+            .col_expr(Column::Unchanged, sea_orm::sea_query::Expr::value(c.unchanged))
+            .col_expr(Column::Failed, sea_orm::sea_query::Expr::value(c.failed))
+            .col_expr(Column::ProgressTotal, sea_orm::sea_query::Expr::value(total))
+            .filter(Column::Id.eq(run_id))
+            .filter(Column::Status.eq("RUNNING"))
+            .exec(db)
+            .await?;
+        Ok(())
+    }
+
     /// Awal run SUCCESS terakhir (batas bawah `updated_since` untuk sinkronisasi inkremental).
     ///
     /// # Errors

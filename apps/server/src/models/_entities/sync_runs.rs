@@ -21,6 +21,7 @@ pub struct Model {
     pub unchanged: i32,
     pub deactivated: i32,
     pub failed: i32,
+    pub progress_total: Option<i32>,
     pub note: Option<String>,
     pub started_at: DateTimeWithTimeZone,
     pub finished_at: Option<DateTimeWithTimeZone>,

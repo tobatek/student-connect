@@ -192,6 +192,7 @@ const meOf = (s: Store): Me | null => {
 };
 
 /** Data master tiruan (di produksi berasal dari Portal lewat sinkronisasi). */
+let mockSync: { kind: string; startedAt: number } | null = null;
 const DEMO_STUDENTS = [
   { nim: '51422001', nama: 'Mahasiswa Demo', prodi: 'Keperawatan', angkatan: 2022 },
   { nim: '51422002', nama: 'Budi Santoso', prodi: 'Kebidanan', angkatan: 2022 },
@@ -401,6 +402,38 @@ function route(s: Store, r: Req): MockResult {
       for (const x of body.mappings ?? []) s.overrides[`${x.group_name}:${x.internal_value}`] = x.simkatmawa_code;
     }
     return ok(catalog());
+  }
+
+  if (path === '/api/master-sync' && method === 'GET') {
+    if (!can('settings.manage')) return deny();
+    const elapsed = mockSync ? Date.now() - mockSync.startedAt : 0;
+    const running = mockSync && elapsed < 8000;
+    if (mockSync && !running) mockSync = null;
+    const total = 1311;
+    const runs = [
+      ...(running ? [{ id: 'r-live', kind: mockSync!.kind, triggered_by: 'manual', status: 'RUNNING', fetched: Math.min(total, Math.round((elapsed / 8000) * total)), created: 0, updated: 0, unchanged: 0, deactivated: 0, failed: 0, progress_total: total, note: null, started_at: iso(0), finished_at: null }] : []),
+      { id: 'r-1', kind: 'students', triggered_by: 'schedule', status: 'SUCCESS', fetched: total, created: 0, updated: 12, unchanged: total - 12, deactivated: 0, failed: 0, progress_total: total, note: null, started_at: iso(20), finished_at: iso(20) },
+      { id: 'r-2', kind: 'employees', triggered_by: 'schedule', status: 'SUCCESS', fetched: 148, created: 0, updated: 1, unchanged: 147, deactivated: 0, failed: 0, progress_total: 148, note: null, started_at: iso(20), finished_at: iso(20) },
+    ];
+    return ok({ enabled: true, counts: { students: { active: total, inactive: 24 }, employees: { active: 148, inactive: 6 } }, runs });
+  }
+  if (path === '/api/master-sync/run' && method === 'POST') {
+    if (!can('settings.manage')) return deny();
+    if (mockSync) return fail(409, 'Sinkronisasi yang diminta sedang berjalan.', undefined, 'conflict');
+    mockSync = { kind: body.kind === 'employees' ? 'employees' : 'students', startedAt: Date.now() };
+    return ok({ queued: [mockSync.kind] }, 202);
+  }
+  if ((path === '/api/master-sync/students' || path === '/api/master-sync/employees') && method === 'GET') {
+    if (!can('settings.manage')) return deny();
+    const q = (r.query.get('q') ?? '').trim().toLowerCase();
+    const page = Number(r.query.get('page') ?? 1);
+    const size = Number(r.query.get('page_size') ?? 15);
+    const rows =
+      path.endsWith('/students')
+        ? DEMO_STUDENTS.map((x) => ({ nim: x.nim, nama: x.nama, email: `${x.nim}@kampus.ac.id`, prodi: x.prodi, angkatan: x.angkatan, is_active: true, last_seen_at: iso(1) }))
+        : DEMO_LECTURERS.map((x) => ({ nip: `19${x.nuptk.slice(0, 8)}`, nuptk: x.nuptk, nama: x.nama, email: null, unit: x.unit, jabatan: 'Dosen', is_active: true, last_seen_at: iso(1) }));
+    const filtered = rows.filter((x) => !q || JSON.stringify(x).toLowerCase().includes(q));
+    return ok({ items: filtered.slice((page - 1) * size, page * size), page, page_size: size, total_items: filtered.length, total_pages: Math.max(1, Math.ceil(filtered.length / size)) });
   }
 
   if (path === '/api/users' && method === 'GET') return can('user.manage') ? ok(s.users) : deny();
